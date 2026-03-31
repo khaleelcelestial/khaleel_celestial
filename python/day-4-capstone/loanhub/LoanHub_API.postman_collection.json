@@ -1,0 +1,332 @@
+{
+  "info": {
+    "name": "LoanHub-API",
+    "description": "LoanHub Loan Application & Management System.\n\nHow to use:\n1. Run 'Login (user)' or 'Login (admin)' — copy the access_token.\n2. Open Collection → Edit → Variables → set `user_token` or `admin_token`.\n3. All protected requests use these variables automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+    { "key": "user_token",  "value": "", "type": "string", "description": "Paste the access_token from Login (user) here" },
+    { "key": "admin_token", "value": "", "type": "string", "description": "Paste the access_token from Login (admin) here" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/register", "host": ["{{base_url}}"], "path": ["auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"rahul\",\n  \"email\": \"rahul@mail.com\",\n  \"password\": \"secure1234\",\n  \"phone\": \"9876543210\",\n  \"monthly_income\": 55000\n}"
+            },
+            "description": "Creates a new user account (role=user). Expected: 201."
+          }
+        },
+        {
+          "name": "Login (user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('user_token', json.access_token);",
+                  "  console.log('user_token saved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"rahul\",\n  \"password\": \"secure1234\"\n}"
+            },
+            "description": "Login as a regular user. The test script auto-saves the token to {{user_token}}. Expected: 200 with access_token."
+          }
+        },
+        {
+          "name": "Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('admin_token', json.access_token);",
+                  "  console.log('admin_token saved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin1234\"\n}"
+            },
+            "description": "Login as admin. Token is auto-saved to {{admin_token}}. Expected: 200 with access_token."
+          }
+        }
+      ]
+    },
+    {
+      "name": "User — Loans",
+      "item": [
+        {
+          "name": "Apply for Loan",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/loans", "host": ["{{base_url}}"], "path": ["loans"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500000,\n  \"purpose\": \"home\",\n  \"tenure_months\": 240,\n  \"employment_status\": \"employed\"\n}"
+            },
+            "description": "Submit a new loan application. Requires user JWT. Expected: 201."
+          }
+        },
+        {
+          "name": "List My Loans",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+            "url": { "raw": "{{base_url}}/loans/my?page=1&limit=10", "host": ["{{base_url}}"], "path": ["loans","my"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"10"}] },
+            "description": "Returns all loans for the authenticated user. Expected: 200 list."
+          }
+        },
+        {
+          "name": "List My Loans — Status Filter",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+            "url": { "raw": "{{base_url}}/loans/my?status=pending", "host": ["{{base_url}}"], "path": ["loans","my"], "query": [{"key":"status","value":"pending"}] },
+            "description": "Filter own loans by status=pending. Expected: 200."
+          }
+        },
+        {
+          "name": "View Single Loan",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+            "url": { "raw": "{{base_url}}/loans/my/1", "host": ["{{base_url}}"], "path": ["loans","my","1"] },
+            "description": "View full detail of loan ID 1. Replace 1 with a real loan ID. Expected: 200."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Loans",
+      "item": [
+        {
+          "name": "List All Loans",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/loans?page=1&limit=10&sort_by=applied_at&order=desc", "host": ["{{base_url}}"], "path": ["admin","loans"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"10"},{"key":"sort_by","value":"applied_at"},{"key":"order","value":"desc"}] },
+            "description": "Admin views all loans across all users. Expected: 200."
+          }
+        },
+        {
+          "name": "List Loans — Status Filter",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/loans?status=pending", "host": ["{{base_url}}"], "path": ["admin","loans"], "query": [{"key":"status","value":"pending"}] },
+            "description": "Filter loans by status=pending. Expected: 200."
+          }
+        },
+        {
+          "name": "List Loans — By Purpose",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/loans?purpose=home", "host": ["{{base_url}}"], "path": ["admin","loans"], "query": [{"key":"purpose","value":"home"}] },
+            "description": "Filter loans by purpose=home. Expected: 200."
+          }
+        },
+        {
+          "name": "View Single Loan (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/loans/1", "host": ["{{base_url}}"], "path": ["admin","loans","1"] },
+            "description": "Admin views any loan by ID. Replace 1 with a real loan ID. Expected: 200."
+          }
+        },
+        {
+          "name": "Approve Loan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin/loans/1/review", "host": ["{{base_url}}"], "path": ["admin","loans","1","review"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"admin_remarks\": \"Good income-to-loan ratio. Approved for 240-month tenure.\"\n}"
+            },
+            "description": "Approve a pending loan. Replace 1 with a real pending loan ID. Expected: 200."
+          }
+        },
+        {
+          "name": "Reject Loan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin/loans/2/review", "host": ["{{base_url}}"], "path": ["admin","loans","2","review"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\",\n  \"admin_remarks\": \"Insufficient monthly income relative to loan amount.\"\n}"
+            },
+            "description": "Reject a pending loan. Replace 2 with a real pending loan ID. Expected: 200."
+          }
+        },
+        {
+          "name": "Bulk Eligibility Check",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin/loans/bulk-check", "host": ["{{base_url}}"], "path": ["admin","loans","bulk-check"] },
+            "body": { "mode": "raw", "raw": "{\n  \"loan_ids\": [1, 2, 3]\n}" },
+            "description": "Concurrently compute eligibility scores for multiple loans. Expected: 200."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "GET /analytics/summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/analytics/summary", "host": ["{{base_url}}"], "path": ["analytics","summary"] },
+            "description": "Returns aggregated loan statistics. Admin only. Expected: 200."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error Cases",
+      "item": [
+        {
+          "name": "Duplicate Registration",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/register", "host": ["{{base_url}}"], "path": ["auth","register"] },
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"rahul\",\n  \"email\": \"rahul@mail.com\",\n  \"password\": \"secure1234\",\n  \"phone\": \"9876543210\",\n  \"monthly_income\": 55000\n}" },
+            "description": "Register with an existing username/email. Expected: 409 DuplicateUserError."
+          }
+        },
+        {
+          "name": "Wrong Password Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth","login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"rahul\",\n  \"password\": \"wrongpass\"\n}" },
+            "description": "Login with wrong password. Expected: 401 InvalidCredentialsError."
+          }
+        },
+        {
+          "name": "Amount Too High",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/loans", "host": ["{{base_url}}"], "path": ["loans"] },
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": 9999999,\n  \"purpose\": \"home\",\n  \"tenure_months\": 120,\n  \"employment_status\": \"employed\"\n}" },
+            "description": "Loan amount exceeds ₹10,00,000. Expected: 422 ValidationError."
+          }
+        },
+        {
+          "name": "4th Pending Loan",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/loans", "host": ["{{base_url}}"], "path": ["loans"] },
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": 50000,\n  \"purpose\": \"personal\",\n  \"tenure_months\": 12,\n  \"employment_status\": \"employed\"\n}" },
+            "description": "Apply when already at 3 pending loans. Expected: 422 MaxPendingLoansError."
+          }
+        },
+        {
+          "name": "Re-review Already Reviewed Loan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin/loans/1/review", "host": ["{{base_url}}"], "path": ["admin","loans","1","review"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"rejected\",\n  \"admin_remarks\": \"Trying to re-review this loan.\"\n}" },
+            "description": "Re-review an already approved/rejected loan. Expected: 422 InvalidLoanReviewError."
+          }
+        },
+        {
+          "name": "Non-admin Accessing Admin Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/loans", "host": ["{{base_url}}"], "path": ["admin","loans"] },
+            "description": "User token on admin route. Expected: 403 ForbiddenError."
+          }
+        },
+        {
+          "name": "No Token — Unauthorized",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/loans/my", "host": ["{{base_url}}"], "path": ["loans","my"] },
+            "description": "Call a protected endpoint without any token. Expected: 403 (missing bearer)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Utility",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+            "description": "API and DB health check (no auth required). Expected: 200."
+          }
+        }
+      ]
+    }
+  ]
+}

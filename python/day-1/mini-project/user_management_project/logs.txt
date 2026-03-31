@@ -1,0 +1,11 @@
+2026-03-21 00:50:27 - INFO - User 'khaleelshaik' registered successfully
+2026-03-21 00:50:38 - INFO - User 'khaleelshaik' logged in successfully
+2026-03-21 00:50:45 - INFO - User list viewed
+2026-03-21 00:50:59 - INFO - User 'khaleelshaik' deleted
+2026-03-25 16:48:32 - ERROR - Attempt to delete non-existing user 'hgfcsjdhc'
+2026-03-25 16:49:04 - ERROR - Failed login attempt for user '1212'
+2026-03-25 16:49:18 - ERROR - Failed login attempt for user '1212'
+2026-03-25 16:49:30 - ERROR - Failed login attempt for user '1212'
+2026-03-25 16:49:30 - WARNING - Account locked for user '1212'
+2026-03-25 16:49:47 - ERROR - Failed login attempt for user 'dssd'
+2026-03-25 16:54:26 - ERROR - Failed login attempt for user 'dssd'

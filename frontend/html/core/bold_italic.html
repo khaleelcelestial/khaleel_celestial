@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Text Formatting Example</title>
+</head>
+<body>
+
+  <p>
+    <strong>Strong text</strong> is used for important content.
+    <b>Bold text</b> is just for visual styling.
+  </p>
+  <figure>
+    <img src="chart.png" alt="Bar chart showing Q3 revenue by region">
+    <figcaption>Figure 1: Q3 revenue breakdown across EMEA, APAC, and Americas.</figcaption>
+  </figure>
+  <time datetime="2024-09-15">September 15, 2024</time>
+  <time datetime="2024-09-15T14:30:00">2:30pm today</time>
+  <time datetime="PT2H30M">2 hours 30 minutes</time>
+
+  <p>
+    <em>Emphasized text</em> shows stress in meaning,
+    while <i>italic text</i> is only for stylistic purposes.
+  </p>
+  <dl>
+    <dt>DOM</dt>
+    <dd>Document Object Model — the browser's live tree of the HTML document.</dd>
+
+    <dt>Semantic HTML</dt>
+    <dd>HTML that conveys meaning through element choice, not just appearance.</dd>
+  </dl>
+  <p>
+  Results for "semantic HTML":
+  Using <mark>semantic HTML</mark> improves accessibility.
+  </p>
+  <section>
+  <h2>Frequently Asked Questions</h2>
+
+  <details>
+    <summary>What is semantic HTML?</summary>
+    <p>Semantic HTML uses elements that convey meaning,
+    like <code>&lt;article&gt;</code> and <code>&lt;nav&gt;</code>,
+    rather than generic <code>&lt;div&gt;</code> containers.</p>
+  </details>
+
+  <details>
+    <summary>Why does heading order matter?</summary>
+    <p>Screen reader users navigate by headings.
+    Skipping levels breaks the document outline.</p>
+  </details>
+
+  <!-- Add "open" attribute to expand by default -->
+  <details open>
+    <summary>Is <div> ever appropriate?</summary>
+    <p>Yes — when you need a styling hook with no semantic need.</p>
+  </details>
+
+</section>
+<section>
+  <h2>Web development glossary</h2>
+
+  <dl>
+    <dt>API</dt>
+    <dd>Application Programming Interface — a set of rules that allows
+    different software applications to communicate.</dd>
+
+    <dt>CSS</dt>
+    <dd>Cascading Style Sheets — controls the visual presentation
+    of HTML elements.</dd>
+
+    <dt>DOM</dt>
+    <dd>Document Object Model — the browser's live, in-memory
+    tree representation of an HTML document.</dd>
+
+    <!-- Multiple terms sharing one definition -->
+    <dt>HTTP</dt>
+    <dt>HTTPS</dt>
+    <dd>Protocols for transferring data over the web. HTTPS adds
+    TLS encryption.</dd>
+  </dl>
+  <ul>
+  <li>Frontend
+    <ul>                    <!-- nested inside <li>, not <ul> -->
+      <li>HTML</li>
+      <li>CSS</li>
+      <li>JavaScript</li>
+    </ul>
+  </li>
+  <li>Backend</li>
+</ul>
+
+</section>
+
+</body>
+</html>

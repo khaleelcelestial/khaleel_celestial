@@ -1,0 +1,72 @@
+<form>
+  <p>Select your gender:</p>
+
+  <input type="radio" name="gender" value="male"> Male  
+  <input type="radio" name="gender" value="female"> Female  
+
+  <br><br>
+  <button type="submit">Submit</button>
+</form>
+
+
+<form>
+  <p>Select your hobbies:</p>
+
+  <input type="checkbox" name="hobby" value="sports"> Sports  
+  <input type="checkbox" name="hobby" value="music"> Music  
+  <input type="checkbox" name="hobby" value="reading"> Reading  
+
+  <br><br>
+  <button type="submit">Submit</button>
+</form>
+
+
+<fieldset>
+  <legend>Delivery address</legend>
+  <label for="street">Street</label>
+  <input id="street" type="text" name="street">
+  <label for="city">City</label>
+  <input id="city" type="text" name="city">
+</fieldset>
+
+<!-- Essential for radio/checkbox groups -->
+<fieldset>
+  <legend>Preferred contact method</legend>
+  <label><input type="radio" name="contact" value="email"> Email</label>
+  <label><input type="radio" name="contact" value="phone"> Phone</label>
+</fieldset>
+
+<form>
+  <label>
+    Choose a city:
+    <select name="city">
+      <option value="blr">Bangalore</option>
+      <option value="hyd">Hyderabad</option>
+      <option value="chen">Chennai</option>
+    </select>
+  </label>
+</form>
+
+
+<form>
+  <label>
+    Enter your city:
+    <input list="cities" name="city">
+
+    <datalist id="cities">
+      <option value="Bangalore">
+      <option value="Hyderabad">
+      <option value="Chennai">
+    </datalist>
+  </label>
+</form>
+
+
+<form>
+  <input type="submit" value="Submit Form">
+</form>
+
+
+<form>
+  <button type="submit">Submit Form</button>
+</form>

@@ -1,0 +1,258 @@
+{
+  "info": {
+    "name": "Day2-TaskAPI",
+    "_postman_id": "day2-task-api-collection",
+    "description": "FastAPI Task Management System - Full API Test Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/users/register", "host": ["{{base_url}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"email\": \"alice@mail.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "description": "Register a new user. Expected status: 201"
+          }
+        },
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/users/login", "host": ["{{base_url}}"], "path": ["users", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"password123\"\n}"
+            },
+            "description": "Login with valid credentials. Expected status: 200"
+          }
+        },
+        {
+          "name": "List All Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/users", "host": ["{{base_url}}"], "path": ["users"] },
+            "description": "Get list of all users (passwords excluded). Expected status: 200"
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/users/1", "host": ["{{base_url}}"], "path": ["users", "1"] },
+            "description": "Delete user by ID. Expected status: 200"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "item": [
+        {
+          "name": "Create Task",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/tasks", "host": ["{{base_url}}"], "path": ["tasks"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Write Q2 Report\",\n  \"description\": \"Summarize Q2 financial performance\",\n  \"priority\": \"high\",\n  \"status\": \"pending\",\n  \"owner\": \"alice\"\n}"
+            },
+            "description": "Create a new task. Expected status: 201"
+          }
+        },
+        {
+          "name": "List Tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["tasks"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "description": "List all tasks with pagination. Expected status: 200"
+          }
+        },
+        {
+          "name": "List Tasks - Filter by Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["tasks"],
+              "query": [{ "key": "status", "value": "pending" }]
+            },
+            "description": "Filter tasks by status=pending. Expected status: 200"
+          }
+        },
+        {
+          "name": "List Tasks - Filter by Priority",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks?priority=high",
+              "host": ["{{base_url}}"],
+              "path": ["tasks"],
+              "query": [{ "key": "priority", "value": "high" }]
+            },
+            "description": "Filter tasks by priority=high. Expected status: 200"
+          }
+        },
+        {
+          "name": "List Tasks - Filter by Owner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks?owner=alice",
+              "host": ["{{base_url}}"],
+              "path": ["tasks"],
+              "query": [{ "key": "owner", "value": "alice" }]
+            },
+            "description": "Filter tasks by owner=alice. Expected status: 200"
+          }
+        },
+        {
+          "name": "Get Task by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/tasks/1", "host": ["{{base_url}}"], "path": ["tasks", "1"] },
+            "description": "Retrieve a single task by ID. Expected status: 200"
+          }
+        },
+        {
+          "name": "Full Update Task (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/tasks/1", "host": ["{{base_url}}"], "path": ["tasks", "1"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Write Q2 Report - Updated\",\n  \"description\": \"Updated description\",\n  \"priority\": \"medium\",\n  \"status\": \"in_progress\",\n  \"owner\": \"alice\"\n}"
+            },
+            "description": "Fully replace all task fields. Expected status: 200"
+          }
+        },
+        {
+          "name": "Partial Update Task (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/tasks/1", "host": ["{{base_url}}"], "path": ["tasks", "1"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}"
+            },
+            "description": "Partially update task fields only. Expected status: 200"
+          }
+        },
+        {
+          "name": "Delete Task",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/tasks/1", "host": ["{{base_url}}"], "path": ["tasks", "1"] },
+            "description": "Delete a task by ID. Expected status: 200"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error Cases",
+      "item": [
+        {
+          "name": "Register - Invalid Payload (short username)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/users/register", "host": ["{{base_url}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"ab\",\n  \"email\": \"x@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "description": "Validation error - username too short. Expected status: 422"
+          }
+        },
+        {
+          "name": "Register - Duplicate User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/users/register", "host": ["{{base_url}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"email\": \"alice@mail.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "description": "Attempt to register existing username. Expected status: 409"
+          }
+        },
+        {
+          "name": "Login - Bad Credentials",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/users/login", "host": ["{{base_url}}"], "path": ["users", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "description": "Login with wrong password. Expected status: 401"
+          }
+        },
+        {
+          "name": "Get Task - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/tasks/999", "host": ["{{base_url}}"], "path": ["tasks", "999"] },
+            "description": "Request non-existent task. Expected status: 404"
+          }
+        },
+        {
+          "name": "Delete User - Not Found",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/users/999", "host": ["{{base_url}}"], "path": ["users", "999"] },
+            "description": "Delete non-existent user. Expected status: 404"
+          }
+        },
+        {
+          "name": "Create Task - Invalid Priority",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/tasks", "host": ["{{base_url}}"], "path": ["tasks"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Bad Task\",\n  \"priority\": \"critical\",\n  \"owner\": \"alice\"\n}"
+            },
+            "description": "Invalid enum value for priority. Expected status: 422"
+          }
+        }
+      ]
+    }
+  ]
+}
