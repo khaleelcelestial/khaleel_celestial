@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fetch CRUD</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="page">
+    <h1>Posts CRUD — JSONPlaceholder</h1>
+
+    <!-- Buttons to trigger each operation -->
+    <div class="btn-row">
+      <button onclick="handleGetAll()">GET All (5)</button>
+      <button onclick="handleGetOne()">GET Post #1</button>
+      <button onclick="handleCreate()">POST Create</button>
+      <button onclick="handleUpdate()">PUT Update #1</button>
+      <button onclick="handleDelete()">DELETE Post #1</button>
+      <button class="clear" onclick="clearLog()">Clear</button>
+    </div>
+
+    <!-- Log output -->
+    <div id="log"></div>
+  </div>
+
+  <script src="crud.js"></script>
+
+</body>
+</html>

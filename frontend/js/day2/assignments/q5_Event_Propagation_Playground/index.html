@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Event Propagation</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div class="page">
+    <h1>Event Propagation Playground</h1>
+
+    <!-- Nested boxes -->
+    <div id="grandparent">
+      Grandparent
+      <div id="parent">
+        Parent
+        <button id="child">Click Me</button>
+      </div>
+    </div>
+
+    <!-- Checkboxes -->
+    <div class="controls">
+      <label>
+        <input type="checkbox" id="stop-prop" />
+        Stop Propagation on Parent (bubble stops at parent)
+      </label>
+      <label>
+        <input type="checkbox" id="stop-imm" />
+        Stop Immediate Propagation on Parent (same + stops other listeners on parent)
+      </label>
+      <button id="clear-btn">Clear Log</button>
+    </div>
+
+    <!-- Log output -->
+    <div class="log-box">
+      <p class="log-hint">Click the button above to see the event flow</p>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script src="propagation.js"></script>
+
+</body>
+</html>

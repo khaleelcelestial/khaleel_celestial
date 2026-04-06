@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CSS Position Example</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+
+    .section {
+      margin-bottom: 40px;
+      padding: 10px;
+      border: 2px solid #ccc;
+    }
+
+    /* COMMON BOX STYLE */
+    .box {
+      width: 80px;
+      height: 80px;
+      margin: 10px;
+      display: inline-block;
+      color: white;
+      text-align: center;
+      line-height: 80px;
+      font-weight: bold;
+    }
+
+    /* 1️⃣ DEFAULT (static) */
+    .static .box {
+      position: static; /* default */
+    }
+
+    /* 2️⃣ RELATIVE */
+    .relative .box {
+      position: relative;
+    }
+    .relative .box2 {
+      top: 20px;
+      left: 20px;
+    }
+
+    /* 3️⃣ ABSOLUTE */
+    .absolute {
+      position: relative; /* parent reference */
+      height: 120px;
+    }
+    .absolute .box {
+      position: absolute;
+    }
+    .absolute .box1 {
+      top: 10px;
+      left: 10px;
+    }
+    .absolute .box2 {
+      top: 10px;
+      left: 100px;
+    }
+    .absolute .box3 {
+      top: 10px;
+      left: 190px;
+    }
+
+    /* COLORS */
+    .box1 { background: red; }
+    .box2 { background: blue; }
+    .box3 { background: green; }
+  </style>
+</head>
+<body>
+
+  <!-- DEFAULT -->
+  <div class="section static">
+    <h3>Default (position: static)</h3>
+    <div class="box box1">1</div>
+    <div class="box box2">2</div>
+    <div class="box box3">3</div>
+  </div>
+
+  <!-- RELATIVE -->
+  <div class="section relative">
+    <h3>Relative (position: relative)</h3>
+    <div class="box box1">1</div>
+    <div class="box box2">2</div>
+    <div class="box box3">3</div>
+  </div>
+
+  <!-- ABSOLUTE -->
+  <div class="section absolute">
+    <div style="position : relative; z-index: 10;">Absolute (position: absolute)</div>
+    <div class="box box1">1</div>
+    <div class="box box2">2</div>
+    <div class="box box3">3</div>
+  </div>
+
+</body>
+</html>

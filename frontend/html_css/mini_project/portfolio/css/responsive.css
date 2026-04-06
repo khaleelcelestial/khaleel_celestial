@@ -1,0 +1,210 @@
+/* ============================================
+   RESPONSIVE.CSS — Media Queries
+   ============================================ */
+
+/* ── Mobile (base, ≤767px) ── */
+
+/* Nav: collapse to vertical stack on mobile via CSS only */
+@media (max-width: 767px) {
+  .nav__links {
+    position: fixed;
+    top: var(--nav-height);
+    left: 0;
+    right: 0;
+    background: var(--clr-nav-bg);
+    backdrop-filter: blur(12px);
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-6);
+    padding: var(--sp-8) var(--sp-6);
+    border-bottom: 1px solid var(--clr-border);
+    transform: translateY(-120%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform var(--dur-slow) var(--ease-out),
+                opacity var(--dur-slow) var(--ease-out);
+    z-index: 999;
+  }
+
+  .nav__toggle:checked ~ .nav__links,
+  .nav__links.nav__links--open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .nav__toggle:checked ~ .nav__actions .nav__hamburger span:nth-child(1) {
+    transform: translateY(8px) rotate(45deg);
+  }
+  .nav__toggle:checked ~ .nav__actions .nav__hamburger span:nth-child(2) {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  .nav__toggle:checked ~ .nav__actions .nav__hamburger span:nth-child(3) {
+    transform: translateY(-8px) rotate(-45deg);
+  }
+
+
+  .nav__hamburger {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 24px;
+    height: 18px;
+    cursor: pointer;
+    padding: 0;
+    background: none;
+    border: none;
+  }
+
+  .nav__hamburger span {
+    display: block;
+    width: 100%;
+    height: 2px;
+    background: var(--clr-text-primary);
+    border-radius: var(--radius-full);
+    transition: all var(--dur-base) var(--ease-out);
+  }
+
+  .nav__hamburger[aria-expanded="true"] span:nth-child(1) {
+    transform: translateY(8px) rotate(45deg);
+  }
+  .nav__hamburger[aria-expanded="true"] span:nth-child(2) {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  .nav__hamburger[aria-expanded="true"] span:nth-child(3) {
+    transform: translateY(-8px) rotate(-45deg);
+  }
+
+  .hero__cta-group {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hero__cta-group .btn {
+    width: 100%;
+    max-width: 280px;
+    justify-content: center;
+  }
+
+  .timeline__item:nth-child(odd),
+  .timeline__item:nth-child(even) {
+    text-align: left;
+    padding-left: var(--sp-12);
+    padding-right: 0;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .timeline__item:nth-child(odd)::before,
+  .timeline__item:nth-child(even)::before {
+    left: 8px;
+    right: auto;
+  }
+
+  .timeline::before {
+    left: 16px;
+    transform: none;
+  }
+
+  .footer__col {
+    min-width: 100%;
+  }
+}
+
+/* Hide hamburger on desktop */
+.nav__hamburger {
+  display: none;
+}
+
+/* ── Tablet (≥768px) ── */
+@media (min-width: 768px) {
+  .hero__name {
+    font-size: clamp(3.5rem, 6vw, 5.5rem);
+  }
+
+  .about__img-placeholder {
+    aspect-ratio: 3/4;
+  }
+
+  .section-title {
+    font-size: var(--fs-2xl);
+  }
+
+  .projects__grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  .footer__col {
+    flex: 1;
+  }
+}
+
+/* ── Desktop (≥1024px) ── */
+@media (min-width: 1024px) {
+  .section-title {
+    font-size: var(--fs-3xl);
+  }
+
+  .hero__content {
+    padding-top: var(--sp-12);
+  }
+
+  .hero__tagline {
+    font-size: var(--fs-lg);
+  }
+
+  .about__grid {
+    grid-template-columns: 380px 1fr;
+    gap: var(--sp-20);
+  }
+
+  /* Featured project spans 2 columns */
+  .projects__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .project-card--featured {
+    grid-column: 1 / span 2;
+  }
+
+  .project-card--featured .project-card__img {
+    aspect-ratio: 21/9;
+  }
+
+  .contact__grid {
+    grid-template-columns: 3fr 2fr;
+  }
+
+  .timeline__item {
+    width: 46%;
+  }
+}
+
+/* ── Wide (≥1440px) ── */
+@media (min-width: 1440px) {
+  :root {
+    --container-max: 1320px;
+  }
+}
+
+/* ── Narrow screens (≤375px) ── */
+@media (max-width: 375px) {
+  :root {
+    --container-pad: var(--sp-4);
+    --section-pad: var(--sp-16);
+  }
+
+  .hero__name {
+    font-size: 2.5rem;
+  }
+
+  .nav__logo {
+    font-size: var(--fs-base);
+  }
+
+  .testimonial-card {
+    padding: var(--sp-6);
+  }
+}

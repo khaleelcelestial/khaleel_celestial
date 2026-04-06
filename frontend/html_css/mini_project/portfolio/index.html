@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Khaleel Shaik — AI Engineer. Building data-powered intelligence with scalable ML and data engineering." />
+
+  <!-- Open Graph -->
+  <meta property="og:title"       content="Khaleel Shaik — AI Engineer" />
+  <meta property="og:description" content="Building data-powered intelligence with scalable ML and data engineering." />
+  <meta property="og:type"        content="website" />
+  <meta property="og:url"         content="https://khaleelshaik.dev" />
+  <meta property="og:image"       content="images/og-cover.jpg" />
+
+  <title>Khaleel Shaik — AI Engineer</title>
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/reset.css" />
+  <link rel="stylesheet" href="css/variables.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/animations.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════
+       SKIP NAVIGATION
+  ══════════════════════════════════════ -->
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <!-- ══════════════════════════════════════
+       NAVIGATION
+  ══════════════════════════════════════ -->
+  <header role="banner">
+    <nav class="nav" aria-label="Main navigation">
+      <div class="container nav__inner">
+
+        <!-- Logo -->
+        <a href="#hero" class="nav__logo" aria-label="Khaleel Shaik — Home">
+          Khaleel<span>.</span>Shaik
+        </a>
+
+        <!-- CSS-only Mobile Toggle -->
+        <input type="checkbox" id="nav-toggle" class="nav__toggle" aria-label="Open navigation menu" hidden />
+
+        <!-- Nav Links -->
+        <ul class="nav__links" id="nav-links" role="list">
+          <li><a href="#about"        class="nav__link" aria-current="false">About</a></li>
+          <li><a href="#projects"     class="nav__link" aria-current="false">Projects</a></li>
+          <li><a href="#experience"   class="nav__link" aria-current="false">Experience</a></li>
+          <li><a href="#testimonials" class="nav__link" aria-current="false">Reviews</a></li>
+          <li><a href="#contact"      class="nav__link" aria-current="false">Contact</a></li>
+        </ul>
+
+        <!-- Actions -->
+        <div class="nav__actions">
+          <button
+            class="theme-toggle"
+            id="theme-toggle"
+            aria-label="Toggle dark mode"
+            aria-pressed="false"
+          >
+            <span class="theme-icon--light" aria-hidden="true">☀️</span>
+            <span class="theme-icon--dark"  aria-hidden="true">🌙</span>
+          </button>
+
+          <!-- Mobile hamburger (CSS-only toggle) -->
+          <label
+            class="nav__hamburger"
+            for="nav-toggle"
+            aria-label="Open navigation menu"
+            aria-expanded="false"
+            role="button"
+            tabindex="0"
+          >
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+          </label>
+        </div>
+
+      </div>
+    </nav>
+  </header>
+
+  <!-- ══════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════ -->
+  <main id="main-content">
+
+    <!-- ══════════════════════════════════════
+         HERO
+    ══════════════════════════════════════ -->
+    <section id="hero" class="hero" aria-labelledby="hero-heading">
+      <div class="container hero__content">
+        <p class="hero__eyebrow">AI Engineer &amp; Data Science Engineer</p>
+        <h1 class="hero__name" id="hero-heading">
+          Building <em>Intelligent</em><br />Systems
+        </h1>
+        <p class="hero__role">Python · Oracle SQL · Machine Learning</p>
+        <p class="hero__tagline">
+          I engineer data-driven solutions and scalable ML pipelines for high-impact business outcomes.
+        </p>
+        <div class="hero__cta-group">
+          <a href="#projects" class="btn btn--primary">View Projects</a>
+          <a href="#contact"  class="btn btn--outline">Get In Touch</a>
+        </div>
+      </div>
+
+      <!-- Scroll indicator -->
+      <div class="hero__scroll" aria-hidden="true">
+        <span class="hero__scroll-label">Scroll</span>
+        <div class="hero__scroll-arrow">
+          <svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="scroll-svg">
+            <polyline points="4,4 12,12 20,4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="4,14 12,22 20,14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="4,24 12,32 20,24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+    ══════════════════════════════════════ -->
+    <section id="about" aria-labelledby="about-heading">
+      <div class="container">
+        <header class="section-header">
+          <h2 class="section-title" id="about-heading">About Me</h2>
+        </header>
+
+        <div class="about__grid">
+          <!-- Image -->
+          <div class="about__image-wrap">
+            <figure class="about__img-placeholder" role="img" aria-label="Profile photo placeholder">
+              <span aria-hidden="true">👤</span>
+            </figure>
+          </div>
+
+          <!-- Text -->
+          <div class="about__text">
+            <h3 class="about__heading">Hi, I'm Khaleel — an AI Engineer.</h3>
+            <p class="about__bio">
+              I am pursuing B.Tech Computer Science (Data Science) and building real-world AI solutions.
+              My background spans Python, Oracle SQL, ML model development, and data visualization.
+            </p>
+            <p class="about__bio">
+              I implement ETL pipelines, perform exploratory data analysis with pandas/NumPy, and
+              develop ML models using scikit-learn for high-impact outcomes.
+            </p>
+
+            <div class="divider"></div>
+
+            <!-- Skills -->
+            <p class="skills-heading">Core Skills</p>
+            <div class="skills-bars" role="list" aria-label="Skill proficiency levels">
+
+              <div class="skill-bar" role="listitem">
+                <div class="skill-bar__label">
+                  <span>Python</span>
+                  <span>95%</span>
+                </div>
+                <div class="skill-bar__track" role="progressbar" aria-valuenow="95" aria-valuemin="0" aria-valuemax="100" aria-label="Python proficiency: 95%">
+                  <div class="skill-bar__fill fill-95"></div>
+                </div>
+              </div>
+
+              <div class="skill-bar" role="listitem">
+                <div class="skill-bar__label">
+                  <span>Oracle SQL</span>
+                  <span>92%</span>
+                </div>
+                <div class="skill-bar__track" role="progressbar" aria-valuenow="92" aria-valuemin="0" aria-valuemax="100" aria-label="Oracle SQL proficiency: 92%">
+                  <div class="skill-bar__fill fill-92"></div>
+                </div>
+              </div>
+
+              <div class="skill-bar" role="listitem">
+                <div class="skill-bar__label">
+                  <span>Machine Learning</span>
+                  <span>88%</span>
+                </div>
+                <div class="skill-bar__track" role="progressbar" aria-valuenow="88" aria-valuemin="0" aria-valuemax="100" aria-label="Machine Learning proficiency: 88%">
+                  <div class="skill-bar__fill fill-88"></div>
+                </div>
+              </div>
+
+            </div>
+
+            <div class="about__cta">
+              <a href="#contact" class="btn btn--primary">Hire Me</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         PROJECTS
+    ══════════════════════════════════════ -->
+    <section id="projects" aria-labelledby="projects-heading">
+      <div class="container">
+        <header class="section-header">
+          <h2 class="section-title" id="projects-heading">Featured Projects</h2>
+        </header>
+
+        <div class="projects__grid">
+
+          <!-- Card 1: Featured -->
+          <article class="project-card project-card--featured" aria-label="Automated Plant Health Monitoring project">
+            <div class="project-card__img" aria-hidden="true">
+              <div class="project-card__img-inner">🌿</div>
+            </div>
+            <div class="project-card__body">
+              <h3 class="project-card__title">Automated Plant Health Monitoring & Irrigation</h3>
+              <p class="project-card__desc">
+                IoT-based system with NPK/moisture/temperature sensors. Real-time data kicked off a
+                neural network to drive ESP8266/relay-based irrigation and nutrient control.
+              </p>
+              <ul class="project-card__tags" aria-label="Technologies used">
+                <li><span class="tag">Python</span></li>
+                <li><span class="tag">IoT</span></li>
+                <li><span class="tag">ESP8266</span></li>
+                <li><span class="tag">Machine Learning</span></li>
+              </ul>
+            </div>
+            <footer class="project-card__footer">
+              <a href="#" class="btn btn--primary btn--sm" aria-label="View Plant Monitoring project">View Project →</a>
+            </footer>
+          </article>
+
+          <!-- Card 2 -->
+          <article class="project-card" aria-label="Player Performance EDA project">
+            <div class="project-card__img" aria-hidden="true">
+              <div class="project-card__img-inner">📈</div>
+            </div>
+            <div class="project-card__body">
+              <h3 class="project-card__title">Player Performance Exploratory Data Analysis</h3>
+              <p class="project-card__desc">
+                Data cleaning and EDA using pandas and NumPy. Created key visualizations with Matplotlib
+                and Seaborn to reveal trends and correlations for performance improvement.
+              </p>
+              <ul class="project-card__tags" aria-label="Technologies used">
+                <li><span class="tag">pandas</span></li>
+                <li><span class="tag">NumPy</span></li>
+                <li><span class="tag">Matplotlib</span></li>
+                <li><span class="tag">Seaborn</span></li>
+              </ul>
+            </div>
+            <footer class="project-card__footer">
+              <a href="#" class="btn btn--outline btn--sm" aria-label="View EDA project">View Project →</a>
+            </footer>
+          </article>
+
+          <!-- Card 3 -->
+          <article class="project-card" aria-label="WhatsApp-style Portfolio project">
+            <div class="project-card__img" aria-hidden="true">
+              <div class="project-card__img-inner">💬</div>
+            </div>
+            <div class="project-card__body">
+              <h3 class="project-card__title">Portfolio Website (WhatsApp-Style UI)</h3>
+              <p class="project-card__desc">
+                Responsive portfolio built with HTML/CSS/JS in chat-inspired UI. Showcases profile, skills, and projects
+                within an interactive conversation-style structure.
+              </p>
+              <ul class="project-card__tags" aria-label="Technologies used">
+                <li><span class="tag">HTML</span></li>
+                <li><span class="tag">CSS</span></li>
+                <li><span class="tag">JavaScript</span></li>
+                <li><span class="tag">UX</span></li>
+              </ul>
+            </div>
+            <footer class="project-card__footer">
+              <a href="#" class="btn btn--outline btn--sm" aria-label="View Portfolio project">View Project →</a>
+            </footer>
+          </article>
+
+          <!-- Card 4 -->
+          <article class="project-card" aria-label="Machine learning model validation">      
+            <div class="project-card__img" aria-hidden="true">
+              <div class="project-card__img-inner">🧠</div>
+            </div>
+            <div class="project-card__body">
+              <h3 class="project-card__title">ML Model Evaluation & Insights</h3>
+              <p class="project-card__desc">
+                Implemented supervised ML workflows (regression/classification) with scikit-learn.
+                Includes split-validation, model comparison, and metric reporting.
+              </p>
+              <ul class="project-card__tags" aria-label="Technologies used">
+                <li><span class="tag">scikit-learn</span></li>
+                <li><span class="tag">ML</span></li>
+                <li><span class="tag">pandas</span></li>
+                <li><span class="tag">NumPy</span></li>
+              </ul>
+            </div>
+            <footer class="project-card__footer">
+              <a href="#" class="btn btn--outline btn--sm" aria-label="View ML project">View Project →</a>
+            </footer>
+          </article>
+
+          <!-- Card 5 -->
+          <article class="project-card" aria-label="Excel / Power BI report project">
+            <div class="project-card__img" aria-hidden="true">
+              <div class="project-card__img-inner">📊</div>
+            </div>
+            <div class="project-card__body">
+              <h3 class="project-card__title">Data Visualization with Excel + Power BI</h3>
+              <p class="project-card__desc">
+                Built interactive dashboards for business KPIs using Excel and Power BI, enabling
+                decision-makers with drilldown and trend analysis.
+              </p>
+              <ul class="project-card__tags" aria-label="Technologies used">
+                <li><span class="tag">Microsoft Excel</span></li>
+                <li><span class="tag">Power BI</span></li>
+                <li><span class="tag">Data Viz</span></li>
+              </ul>
+            </div>
+            <footer class="project-card__footer">
+              <a href="#" class="btn btn--outline btn--sm" aria-label="View BI project">View Project →</a>
+            </footer>
+          </article>
+
+          <!-- Card 6 -->
+          <article class="project-card" aria-label="SQL-driven analytics project">
+            <div class="project-card__img" aria-hidden="true">
+              <div class="project-card__img-inner">🗄️</div>
+            </div>
+            <div class="project-card__body">
+              <h3 class="project-card__title">Oracle SQL Analytics Pipeline</h3>
+              <p class="project-card__desc">
+                Designed data pipelines and analytic queries in Oracle SQL to support business reporting workflows.
+                Includes joins, window functions, and performance tuning.
+              </p>
+              <ul class="project-card__tags" aria-label="Technologies used">
+                <li><span class="tag">Oracle SQL</span></li>
+                <li><span class="tag">SQL</span></li>
+                <li><span class="tag">ETL</span></li>
+              </ul>
+            </div>
+            <footer class="project-card__footer">
+              <a href="#" class="btn btn--outline btn--sm" aria-label="View SQL project">View Project →</a>
+            </footer>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         EXPERIENCE / TIMELINE
+    ══════════════════════════════════════ -->
+    <section id="experience" aria-labelledby="experience-heading">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-label">Education & Projects</span>
+          <h2 class="section-title" id="experience-heading">Timeline</h2>
+        </header>
+
+        <ol class="timeline" aria-label="Education and project timeline">
+
+          <li class="timeline__item">
+            <time class="timeline__date" datetime="2021-06">2021 — 2025</time>
+            <h3 class="timeline__role">B.Tech Computer Science (Data Science)</h3>
+            <p class="timeline__company">Anil Neerukonda Institute of Technology &amp; Sciences</p>
+            <p class="timeline__desc">
+              CGPA 8.18; completed coursework in Machine Learning, Data Mining, Database Systems, and AI.
+            </p>
+          </li>
+
+          <li class="timeline__item">
+            <time class="timeline__date" datetime="2019-06">2019 — 2021</time>
+            <h3 class="timeline__role">Intermediate (MPC)</h3>
+            <p class="timeline__company">Tirumala Junior College</p>
+            <p class="timeline__desc">
+              Achieved 97.9%, with high scores in mathematics, physics, and computer science.
+            </p>
+          </li>
+
+          <li class="timeline__item">
+            <time class="timeline__date" datetime="2024-10">2024</time>
+            <h3 class="timeline__role">Automated Plant Health Monitoring &amp; Irrigation</h3>
+            <p class="timeline__company">Capstone Project</p>
+            <p class="timeline__desc">
+              Designed an IoT solution using sensors, ESP8266, and ML logic to optimize irrigation and nutrient management.
+            </p>
+          </li>
+
+          <li class="timeline__item">
+            <time class="timeline__date" datetime="2023-08">2023</time>
+            <h3 class="timeline__role">Exploratory Data Analysis of Player Performance</h3>
+            <p class="timeline__company">Data Science Project</p>
+            <p class="timeline__desc">
+              Conducted data cleaning and visualization with pandas, NumPy, Matplotlib, and Seaborn to surface actionable insights.
+            </p>
+          </li>
+
+          <li class="timeline__item">
+            <time class="timeline__date" datetime="2022-12">2022</time>
+            <h3 class="timeline__role">Portfolio Website (WhatsApp-Style UI)</h3>
+            <p class="timeline__company">Personal Project</p>
+            <p class="timeline__desc">
+              Created a responsive portfolio in chat-style layout using HTML, CSS, and JavaScript to showcase portfolio work.
+            </p>
+          </li>
+
+        </ol>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         TESTIMONIALS
+    ══════════════════════════════════════ -->
+    <section id="testimonials" aria-labelledby="testimonials-heading">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-label">Kind Words</span>
+          <h2 class="section-title" id="testimonials-heading">What People Say</h2>
+        </header>
+
+        <div class="testimonials__grid" role="list" aria-label="Client testimonials">
+
+          <article class="testimonial-card" role="listitem">
+            <blockquote>
+              <p class="testimonial-card__quote">
+                Khaleel transformed our data dashboard from a confusing mess into something our
+                whole team actually loves using. The attention to both performance and UX is
+                unmatched — delivery was ahead of schedule.
+              </p>
+              <footer class="testimonial-card__author">
+                <div class="testimonial-card__avatar" aria-hidden="true">SL</div>
+                <div>
+                  <cite class="testimonial-card__name">Sarah Lin</cite>
+                  <p class="testimonial-card__role">CTO, Axiom Labs</p>
+                </div>
+              </footer>
+            </blockquote>
+          </article>
+
+          <article class="testimonial-card" role="listitem">
+            <blockquote>
+              <p class="testimonial-card__quote">
+                Working with Khaleel was a fantastic experience. The system he built for
+                us has become the backbone of our product — clean, scalable, and beautifully
+                documented. Highly recommend.
+              </p>
+              <footer class="testimonial-card__author">
+                <div class="testimonial-card__avatar" aria-hidden="true">MK</div>
+                <div>
+                  <cite class="testimonial-card__name">Marcus Kim</cite>
+                  <p class="testimonial-card__role">Product Lead, Helix Digital</p>
+                </div>
+              </footer>
+            </blockquote>
+          </article>
+
+          <article class="testimonial-card" role="listitem">
+            <blockquote>
+              <p class="testimonial-card__quote">
+                Khaleel rebuilt our analytics flows using ML pipelines and the performance and
+                reliability gains were directly measurable. A result-driven developer with
+                strong domain understanding.
+              </p>
+              <footer class="testimonial-card__author">
+                <div class="testimonial-card__avatar" aria-hidden="true">JP</div>
+                <div>
+                  <cite class="testimonial-card__name">Jenna Park</cite>
+                  <p class="testimonial-card__role">Founder, Verdant Co.</p>
+                </div>
+              </footer>
+            </blockquote>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         CONTACT
+    ══════════════════════════════════════ -->
+    <section id="contact" aria-labelledby="contact-heading">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-label">Let's Talk</span>
+          <h2 class="section-title" id="contact-heading">Get In Touch</h2>
+        </header>
+
+        <div class="contact__grid">
+
+          <!-- Contact Form -->
+          <div class="contact__form-wrap">
+            <form
+              id="contact-form"
+              action="#"
+              method="post"
+              aria-label="Contact form"
+            >
+              <fieldset>
+                <legend class="sr-only">Send a message to Khaleel Shaik</legend>
+
+                <div class="form-group">
+                  <label class="form-label" for="name">
+                    Full Name <abbr title="required" aria-label="required">*</abbr>
+                  </label>
+                  <input
+                    type="text"
+                    id="name"
+                    name="name"
+                    class="form-control"
+                    placeholder="Your full name"
+                    required
+                    autocomplete="name"
+                    minlength="2"
+                    aria-describedby="name-hint"
+                  />
+                  <span id="name-hint" class="sr-only">Enter your first and last name.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="email">
+                    Email Address <abbr title="required" aria-label="required">*</abbr>
+                  </label>
+                  <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="form-control"
+                    placeholder="you@example.com"
+                    required
+                    autocomplete="email"
+                    aria-describedby="email-hint"
+                  />
+                  <span id="email-hint" class="sr-only">Enter a valid email address where I can reply.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="subject">
+                    Subject <abbr title="required" aria-label="required">*</abbr>
+                  </label>
+                  <select
+                    id="subject"
+                    name="subject"
+                    class="form-control"
+                    required
+                    aria-describedby="subject-hint"
+                  >
+                    <option value="" disabled selected>Select a topic…</option>
+                    <option value="project">New Project Enquiry</option>
+                    <option value="freelance">Freelance Collaboration</option>
+                    <option value="fulltime">Full-Time Opportunity</option>
+                    <option value="consulting">Technical Consulting</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <span id="subject-hint" class="sr-only">Select the topic that best describes your message.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="message">
+                    Message <abbr title="required" aria-label="required">*</abbr>
+                  </label>
+                  <textarea
+                    id="message"
+                    name="message"
+                    class="form-control"
+                    placeholder="Tell me about your project or idea…"
+                    required
+                    minlength="20"
+                    rows="5"
+                    aria-describedby="message-hint"
+                  ></textarea>
+                  <span id="message-hint" class="sr-only">Please write at least 20 characters describing your enquiry.</span>
+                </div>
+
+                <button type="submit" class="btn btn--primary btn--submit">
+                  Send Message ✉️
+                </button>
+
+              </fieldset>
+            </form>
+          </div>
+
+          <!-- Contact Info -->
+          <aside class="contact__info" aria-label="Contact details">
+            <h3 class="contact-info__heading">Let's Build Something Great</h3>
+            <p class="contact-info__desc">
+              I'm currently available for freelance work and full-time opportunities.
+              Whether you have a project in mind or just want to say hello — my inbox is always open.
+            </p>
+
+            <address>
+              <dl class="contact-details">
+
+                <div class="contact-detail">
+                  <dt>
+                    <div class="contact-detail__icon" aria-hidden="true">📧</div>
+                  </dt>
+                  <dd>
+                    <p class="contact-detail__label">Email</p>
+                    <a class="contact-detail__value" href="mailto:khaleelshaik.harideep@gmail.com">khaleelshaik.harideep@gmail.com</a>
+                  </dd>
+                </div>
+
+                <div class="contact-detail">
+                  <dt>
+                    <div class="contact-detail__icon" aria-hidden="true">📞</div>
+                  </dt>
+                  <dd>
+                    <p class="contact-detail__label">Phone</p>
+                    <a class="contact-detail__value" href="tel:+919515868931">+91 95158 68931</a>
+                  </dd>
+                </div>
+
+                <div class="contact-detail">
+                  <dt>
+                    <div class="contact-detail__icon" aria-hidden="true">📍</div>
+                  </dt>
+                  <dd>
+                    <p class="contact-detail__label">Location</p>
+                    <p class="contact-detail__value">Rajamahendravaram, Andhra Pradesh, India</p>
+                  </dd>
+                </div>
+
+              </dl>
+            </address>
+
+            <nav aria-label="Social media profiles">
+              <p class="skills-heading">Find Me Online</p>
+              <div class="social-links">
+                <a href="https://github.com/ShaikKhaleel2004" class="social-link" aria-label="GitHub profile" target="_blank" rel="noreferrer noopener">
+                  <span aria-hidden="true">💻</span>
+                </a>
+                <a href="https://linkedin.com/in/khaleel-shaik-a59818259" class="social-link" aria-label="LinkedIn profile" target="_blank" rel="noreferrer noopener">
+                  <span aria-hidden="true">💼</span>
+                </a>
+                <a href="https://twitter.com" class="social-link" aria-label="Twitter profile" target="_blank" rel="noreferrer noopener">
+                  <span aria-hidden="true">🐦</span>
+                </a>
+                <a href="https://github.com/ShaikKhaleel2004" class="social-link" aria-label="Projects GitHub" target="_blank" rel="noreferrer noopener">
+                  <span aria-hidden="true">🧩</span>
+                </a>
+              </div>
+            </nav>
+          </aside>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ══════════════════════════════════════
+       FOOTER
+  ══════════════════════════════════════ -->
+  <footer class="footer" role="contentinfo" aria-label="Site footer">
+    <div class="container footer__inner">
+      <div class="footer__cols">
+
+        <!-- Brand -->
+        <div class="footer__col">
+          <a href="#hero" class="footer__logo" aria-label="Khaleel Shaik — Back to top">
+            Khaleel<span>.</span>Shaik
+          </a>
+          <p class="footer__tagline">
+            Building data-first AI solutions with clean code and measurable impact.
+          </p>
+        </div>
+
+        <!-- Quick Links -->
+        <nav class="footer__col" aria-label="Quick navigation links">
+          <p class="footer__col-title">Quick Links</p>
+          <ul class="footer__links" role="list">
+            <li><a href="#about"        class="footer__link">About</a></li>
+            <li><a href="#projects"     class="footer__link">Projects</a></li>
+            <li><a href="#experience"   class="footer__link">Experience</a></li>
+            <li><a href="#testimonials" class="footer__link">Testimonials</a></li>
+            <li><a href="#contact"      class="footer__link">Contact</a></li>
+          </ul>
+        </nav>
+
+        <!-- Social Links -->
+        <nav class="footer__col" aria-label="Social media links">
+          <p class="footer__col-title">Connect</p>
+          <ul class="footer__social-links" role="list">
+            <li>
+              <a href="#" class="footer__social-link" aria-label="GitHub">
+                <span aria-hidden="true">💻</span> GitHub
+              </a>
+            </li>
+            <li>
+              <a href="#" class="footer__social-link" aria-label="LinkedIn">
+                <span aria-hidden="true">💼</span> LinkedIn
+              </a>
+            </li>
+            <li>
+              <a href="#" class="footer__social-link" aria-label="Twitter">
+                <span aria-hidden="true">🐦</span> Twitter / X
+              </a>
+            </li>
+            <li>
+              <a href="#" class="footer__social-link" aria-label="Dribbble">
+                <span aria-hidden="true">🎨</span> Dribbble
+              </a>
+            </li>
+          </ul>
+        </nav>
+
+      </div>
+
+      <div class="footer__bottom">
+        <p class="footer__copyright">
+          &copy; <span id="footer-year">2024</span> Khaleel Shaik. All rights reserved.
+        </p>
+        <div class="footer__legal-links">
+          <a href="#" class="footer__legal-link">Privacy Policy</a>
+          <a href="#" class="footer__legal-link">Terms of Use</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ══════════════════════════════════════
+       MINIMAL JS
+  ══════════════════════════════════════ -->
+  <script>
+    // Theme toggle (1-line requirement)
+    document.getElementById('theme-toggle').addEventListener('click', function() {
+      document.body.classList.toggle('dark-theme');
+      const isDark = document.body.classList.contains('dark-theme');
+      this.setAttribute('aria-pressed', isDark);
+      this.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Toggle dark mode');
+    });
+
+    // Mobile nav toggle (pure CSS by default; JS sync for accessibility state)
+    const navToggle = document.getElementById('nav-toggle');
+    const navLinks  = document.getElementById('nav-links');
+    const navHamburger = document.querySelector('.nav__hamburger');
+
+    navToggle.addEventListener('change', () => {
+      const expanded = navToggle.checked;
+      navHamburger.setAttribute('aria-expanded', expanded);
+      navHamburger.setAttribute('aria-label', expanded ? 'Close navigation menu' : 'Open navigation menu');
+      navLinks.classList.toggle('nav__links--open', expanded);
+    });
+
+    // When a link is clicked, close mobile navigation on narrow screens
+    navLinks.querySelectorAll('.nav__link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.matchMedia('(max-width: 767px)').matches) {
+          navToggle.checked = false;
+          navToggle.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+
+    // Active nav link on scroll
+    const sections = document.querySelectorAll('section[id]');
+    const navAnchors = document.querySelectorAll('.nav__link');
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          navAnchors.forEach(a => {
+            a.classList.remove('active');
+            a.removeAttribute('aria-current');
+          });
+          const active = document.querySelector(`.nav__link[href="#${entry.target.id}"]`);
+          if (active) {
+            active.classList.add('active');
+            active.setAttribute('aria-current', 'true');
+          }
+        }
+      });
+    }, { threshold: 0.4 });
+    sections.forEach(s => observer.observe(s));
+
+    // Update footer year
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
+
+    // Animate skill bars when visible
+    const skillBars = document.querySelectorAll('.skill-bar__fill');
+    const skillObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('animated');
+        }
+      });
+    }, { threshold: 0.1 });
+    skillBars.forEach(bar => skillObserver.observe(bar));
+  </script>
+
+</body>
+</html>

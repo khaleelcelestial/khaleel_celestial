@@ -1,0 +1,40 @@
+/* Layout for side-by-side boxes */
+.container {
+    display: flex;
+    gap: 40px;
+}
+
+/* Common box styles */
+.box {
+    width: 300px;
+    padding: 20px;
+    border: 5px solid black;
+    margin: 10px;
+    text-align: center;
+}
+
+/* Content-box (default behavior) */
+.content-box {
+    box-sizing: content-box;
+    background-color: lightcoral;
+}
+
+/* Border-box */
+.border-box {
+    box-sizing: border-box;
+    background-color: lightgreen;
+}
+
+/*
+WHY border-box is preferred:
+
+In content-box:
+Total width = width + padding + border
+→ Makes layout calculations harder
+
+In border-box:
+Total width = defined width (includes padding + border)
+→ Easier to control layout
+→ Prevents unexpected overflow
+→ Used in most modern CSS resets
+*/

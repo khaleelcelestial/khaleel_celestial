@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CSS Selectors Example</title>
+
+  <!-- Internal CSS -->
+  <style>
+    /* Attribute selector */
+    input[type="text"] {
+      border: 2px solid gray;
+      padding: 8px;
+      font-size: 16px;
+    }
+
+    /* Attribute selector + pseudo-class */
+    input[type="text"]:focus {
+      border-color: blue;
+      outline: none;
+    }
+
+    /* Attribute selector + pseudo-element */
+    input[type="text"]::placeholder {
+      color: green;
+      font-style: italic;
+      content: 👍;
+    }
+
+    
+input [placeholder = "Enter your name" ]::before {
+  content: "👉 ";
+}
+
+  </style>
+</head>
+<body>
+
+  <label>
+    Name:
+    <input type="text" placeholder="Enter your name">
+  </label>
+
+</body>
+</html>

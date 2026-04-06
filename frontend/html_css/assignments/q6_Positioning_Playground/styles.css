@@ -1,0 +1,86 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+/* (a) Sticky Navbar */
+nav {
+    position: sticky;
+    top: 0;
+    background-color: #333;
+    color: white;
+    padding: 15px;
+    z-index: 1000; /* stays above everything */
+}
+
+/* Page content */
+main {
+    padding: 20px;
+}
+
+/* (b) Product Card */
+.card {
+    position: relative; /* required for absolute child */
+    width: 250px;
+    padding: 20px;
+    border: 2px solid black;
+    margin-bottom: 40px;
+}
+
+/* Sale Badge */
+.badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: red;
+    color: white;
+    padding: 5px 10px;
+    z-index: 2;
+}
+
+/* (c) Tooltip */
+.tooltip-container {
+    position: relative; /* anchor for tooltip */
+    display: inline-block;
+    margin-top: 20px;
+}
+
+.tooltip-text {
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: black;
+    color: white;
+    padding: 5px;
+    white-space: nowrap;
+
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 10;
+}
+
+/* Show tooltip on hover */
+.tooltip-container:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* (d) Fixed Button */
+.back-to-top {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: blue;
+    color: white;
+    padding: 10px 15px;
+    text-decoration: none;
+    z-index: 999;
+}
+
+/* (e) Static content */
+.section {
+    height: 100vh; /* each section fills viewport */
+    border-bottom: 1px solid #ccc;
+}

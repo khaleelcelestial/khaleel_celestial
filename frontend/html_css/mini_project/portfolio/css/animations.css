@@ -1,0 +1,124 @@
+/* ============================================
+   ANIMATIONS.CSS — Transitions & Keyframes
+   ============================================ */
+
+/* ── Hero Entry Animations ── */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Scroll Arrow Bounce ── */
+@keyframes bounceChevron {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(8px); }
+}
+
+/* ── Skill Bar Fill ── */
+@keyframes skillFill {
+  from { width: 0 !important; }
+  to   { width: var(--fill-width); }
+}
+
+/* ── Subtle Pulse for Timeline Dots ── */
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--clr-timeline-dot); }
+  50%       { box-shadow: 0 0 0 5px rgba(192,98,42,0.2), 0 0 0 2px var(--clr-timeline-dot); }
+}
+
+/* ── Float animation for hero bg elements ── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-14px) rotate(1deg); }
+  66%       { transform: translateY(6px) rotate(-1deg); }
+}
+
+/* ── Card entrance ── */
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Application of animations ── */
+
+/* Hero section animations */
+.hero__eyebrow {
+  animation: fadeSlideDown 0.6s var(--ease-out) 0.1s both;
+}
+
+.hero__name {
+  animation: fadeSlideUp 0.7s var(--ease-out) 0.2s both;
+}
+
+.hero__role {
+  animation: fadeSlideUp 0.7s var(--ease-out) 0.35s both;
+}
+
+.hero__tagline {
+  animation: fadeSlideUp 0.7s var(--ease-out) 0.5s both;
+}
+
+.hero__cta-group {
+  animation: fadeSlideUp 0.7s var(--ease-out) 0.65s both;
+}
+
+.hero__scroll {
+  animation: fadeIn 0.8s var(--ease-out) 1s both;
+}
+
+.scroll-svg {
+  animation: bounceChevron 1.4s ease-in-out infinite;
+}
+
+/* Timeline dot pulse */
+.timeline__item::before {
+  animation: dotPulse 2.5s ease-in-out infinite;
+}
+
+/* Hero background shape float */
+.hero::before {
+  animation: float 8s ease-in-out infinite;
+}
+
+.hero::after {
+  animation: float 10s ease-in-out 2s infinite reverse;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

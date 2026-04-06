@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Axios API Client</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Load Axios from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+
+  <div class="page">
+    <h1>Axios API Client</h1>
+
+    <div class="btn-row">
+      <button onclick="handleGet()">GET Posts</button>
+      <button onclick="handlePost()">POST Create</button>
+      <button onclick="handlePut()">PUT Update</button>
+      <button onclick="handleDelete()">DELETE Post</button>
+      <button onclick="handle401()">Trigger 401</button>
+      <button onclick="handle404()">Trigger 404</button>
+      <button class="clear" onclick="clearLog()">Clear</button>
+    </div>
+
+    <div id="log"></div>
+  </div>
+
+  <script src="api.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,11 @@
+<div id="parent">
+  <button id="child">Click</button>
+</div>
+<script>
+  const parent = document.getElementById("parent");
+
+parent.addEventListener("click", (e) => {
+  console.log("target:", e.target);
+  console.log("currentTarget:", e.currentTarget);
+});
+</script>

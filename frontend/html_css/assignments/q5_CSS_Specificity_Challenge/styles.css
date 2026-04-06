@@ -1,0 +1,57 @@
+/* Base styles for all list items */
+/* Specificity: 0-0-1 (element selector) */
+li {
+    font-size: 16px;
+    color: gray;
+}
+
+/* Highlight class */
+/* Specificity: 0-1-0 (class selector) */
+.highlight {
+    color: blue;
+}
+
+/* Special ID */
+/* Specificity: 1-0-0 (ID selector) */
+#special {
+    color: red;
+    font-weight: bold;
+}
+
+/* Even items */
+/* Specificity: 0-1-1 (pseudo-class + element) */
+li:nth-child(even) {
+    background-color: lightyellow;
+}
+
+/* Odd items */
+/* Specificity: 0-1-1 */
+li:nth-child(odd) {
+    background-color: lightgray;
+}
+
+/* First item */
+/* Specificity: 0-1-1 */
+li:first-child {
+    font-size: 20px;
+    text-transform: uppercase;
+}
+
+/* Last item */
+/* Specificity: 0-1-1 */
+li:last-child {
+    font-style: italic;
+}
+
+/* Hover effect */
+/* Specificity: 0-1-1 */
+li:hover {
+    text-decoration: underline;
+    transform: scale(1.02);
+}
+
+/* More specific selector overriding class */
+/* Specificity: 0-1-2 (class + element + pseudo-class) */
+ul li.highlight:hover {
+    color: darkblue;
+}

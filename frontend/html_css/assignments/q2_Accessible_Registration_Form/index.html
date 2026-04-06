@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registration Form</title>
+</head>
+<body>
+
+    <header>
+        <h1>User Registration</h1>
+    </header>
+
+    <main>
+        <form action="#" method="post">
+
+            <!-- Personal Information -->
+            <fieldset>
+                <legend>Personal Information</legend>
+
+                <!-- Full Name -->
+                <label for="fullname">Full Name:</label>
+                <input 
+                    type="text" 
+                    id="fullname" 
+                    name="fullname" 
+                    required 
+                    minlength="3">
+
+                <br><br>
+
+                <!-- Email -->
+                <label for="email">Email:</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    required>
+
+                <br><br>
+
+                <!-- Password -->
+                <label for="password">Password:</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    required 
+                    minlength="8"
+                    pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$"
+                    title="Must contain at least 1 uppercase, 1 lowercase, 1 digit, and be at least 8 characters long">
+
+                <br><br>
+
+                <!-- Confirm Password (HTML only: required, minlength same) -->
+                <label for="confirm-password">Confirm Password:</label>
+                <input 
+                    type="password" 
+                    id="confirm-password" 
+                    name="confirm-password" 
+                    required 
+                    minlength="8">
+
+                <br><br>
+
+                <!-- Date of Birth -->
+                <label for="dob">Date of Birth:</label>
+                <input 
+                    type="date" 
+                    id="dob" 
+                    name="dob" 
+                    required 
+                    max="2026-04-01">
+
+                <br><br>
+
+                <!-- Phone -->
+                <label for="phone">Phone Number:</label>
+                <input 
+                    type="tel" 
+                    id="phone" 
+                    name="phone" 
+                    required 
+                    pattern="[0-9]{10}" 
+                    title="Enter a 10-digit phone number">
+
+            </fieldset>
+
+            <br>
+
+            <!-- Gender -->
+            <fieldset>
+                <legend>Gender</legend>
+
+                <input type="radio" id="male" name="gender" value="male" required>
+                <label for="male">Male</label>
+
+                <input type="radio" id="female" name="gender" value="female">
+                <label for="female">Female</label>
+
+                <input type="radio" id="other" name="gender" value="other">
+                <label for="other">Other</label>
+
+            </fieldset>
+
+            <br>
+
+            <!-- Skills -->
+            <fieldset>
+                <legend>Skills (Select at least one)</legend>
+
+                <!-- NOTE: HTML5 limitation — required works per checkbox, not group -->
+                <!-- Workaround: make one checkbox required -->
+                
+                <input type="checkbox" id="html" name="skills" value="html" required>
+                <label for="html">HTML</label>
+
+                <input type="checkbox" id="css" name="skills" value="css">
+                <label for="css">CSS</label>
+
+                <input type="checkbox" id="js" name="skills" value="javascript">
+                <label for="js">JavaScript</label>
+
+                <input type="checkbox" id="python" name="skills" value="python">
+                <label for="python">Python</label>
+
+            </fieldset>
+
+            <br>
+
+            <!-- Bio -->
+            <fieldset>
+                <legend>Additional Information</legend>
+
+                <label for="bio">Bio:</label><br>
+                <textarea 
+                    id="bio" 
+                    name="bio" 
+                    rows="5" 
+                    cols="30"
+                    maxlength="500"></textarea>
+
+                <br><br>
+
+                <!-- Profile Picture -->
+                <label for="profile-pic">Profile Picture:</label>
+                <input 
+                    type="file" 
+                    id="profile-pic" 
+                    name="profile-pic" 
+                    accept=".jpg, .jpeg, .png, .webp">
+
+            </fieldset>
+
+            <br>
+
+            <!-- Submit -->
+            <button type="submit">Register</button>
+
+        </form>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Registration System</p>
+    </footer>
+
+</body>
+</html>

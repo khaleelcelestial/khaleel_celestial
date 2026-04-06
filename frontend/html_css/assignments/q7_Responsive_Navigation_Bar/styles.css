@@ -1,0 +1,80 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+/* Navbar container */
+nav {
+    display: flex;
+    justify-content: space-between; /* left - center - right */
+    align-items: center;
+    flex-wrap: wrap; /* allows wrapping */
+    padding: 15px;
+    background-color: #333;
+    color: white;
+}
+
+/* Logo */
+.logo {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+/* Nav links container */
+.nav-links {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap; /* wrap if too many links */
+    justify-content: center;
+}
+
+/* Links */
+.nav-links a {
+    color: white;
+    text-decoration: none;
+    position: relative;
+    transition: color 0.3s;
+}
+
+/* Hover effect */
+.nav-links a:hover {
+    color: #00bcd4;
+}
+
+/* Underline animation */
+.nav-links a::after {
+    content: "";
+    position: absolute;
+    width: 0%;
+    height: 2px;
+    background: #00bcd4;
+    left: 0;
+    bottom: -3px;
+    transition: width 0.3s;
+}
+
+.nav-links a:hover::after {
+    width: 100%;
+}
+
+/* Sign Up button */
+.signup {
+    background: #00bcd4;
+    color: black;
+    padding: 8px 15px;
+    text-decoration: none;
+}
+
+/* MOBILE VIEW */
+@media (max-width: 768px) {
+    nav {
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .nav-links {
+        flex-direction: column;
+        align-items: center;
+    }
+}
