@@ -1,0 +1,138 @@
+body {
+  font-family: sans-serif;
+  background: #f4f4f4;
+  margin: 0;
+  padding: 2rem;
+  transition: background 0.3s, color 0.3s;
+}
+
+body.dark {
+  background: #1e1e2e;
+  color: #e2e8f0;
+}
+
+.page {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.3rem;
+  margin-bottom: 1.25rem;
+  color: inherit;
+}
+
+h2 {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: inherit;
+}
+
+/* Session cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 1.25rem;
+}
+
+.info-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+body.dark .info-card {
+  background: #2d2d3f;
+  border-color: #3f3f5a;
+}
+
+.label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #4f46e5;
+}
+
+body.dark .value { color: #a5b4fc; }
+
+/* Buttons */
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 1rem;
+}
+
+button {
+  padding: 8px 14px;
+  font-size: 13px;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover { background: #4338ca; }
+
+/* Tester section */
+.tester {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+body.dark .tester {
+  background: #2d2d3f;
+  border-color: #3f3f5a;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+input {
+  flex: 1;
+  min-width: 100px;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  outline: none;
+  background: #fff;
+  color: #333;
+}
+
+body.dark input {
+  background: #1e1e2e;
+  border-color: #3f3f5a;
+  color: #e2e8f0;
+}
+
+input:focus { border-color: #4f46e5; }
+
+/* Output box */
+#output {
+  background: #1e1e2e;
+  color: #86efac;
+  font-family: monospace;
+  font-size: 13px;
+  padding: 1rem;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  min-height: 60px;
+}

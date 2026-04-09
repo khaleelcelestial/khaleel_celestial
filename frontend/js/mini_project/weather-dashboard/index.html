@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <!-- Toast Container -->
+  <div id="toast-container" role="alert" aria-live="polite"></div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⛅</span>
+        <span class="logo-text">Atmosphera</span>
+      </div>
+      <button
+        id="theme-toggle"
+        class="theme-btn"
+        aria-label="Toggle theme"
+        title="Toggle light/dark theme"
+      >
+        <span class="theme-icon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Search Section -->
+  <section class="search-section" aria-label="City search">
+    <div class="search-container">
+      <div class="search-wrap">
+        <input
+          type="text"
+          id="search-input"
+          class="search-input"
+          placeholder="Search for a city…"
+          autocomplete="off"
+          aria-label="Search city"
+          aria-describedby="search-hint"
+        />
+        <button id="search-btn" class="search-btn" aria-label="Search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+        <div id="search-error" class="search-error" role="alert"></div>
+      </div>
+      <p id="search-hint" class="search-hint">Press Enter or click Search. Min 2 letters, city name only.</p>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Current Weather -->
+    <section id="current-section" class="current-section" aria-label="Current weather" aria-live="polite">
+      <div id="current-placeholder" class="placeholder-card">
+        <div class="placeholder-icon">🌍</div>
+        <p class="placeholder-text">Search a city to see the weather</p>
+      </div>
+    </section>
+
+    <!-- Favorites -->
+    <section class="favorites-section" aria-label="Favorite cities">
+      <div class="section-header">
+        <h2 class="section-title">Favorites</h2>
+        <span id="fav-count" class="fav-count">0 cities</span>
+      </div>
+      <ul id="favorites-list" class="favorites-list" aria-label="Favorite cities list">
+        <li id="fav-empty" class="fav-empty">No favorites yet. Star a city to save it!</li>
+      </ul>
+    </section>
+  </main>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cookie Manager</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="page">
+    <h1>Cookie Manager & Session Tracker</h1>
+
+    <!-- Session info cards -->
+    <div class="cards">
+      <div class="info-card">
+        <div class="label">Visit Count</div>
+        <div class="value" id="visit-count">—</div>
+      </div>
+      <div class="info-card">
+        <div class="label">First Visit</div>
+        <div class="value" id="first-visit">—</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Last Visit</div>
+        <div class="value" id="last-visit">—</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Theme</div>
+        <div class="value" id="theme-display">—</div>
+      </div>
+    </div>
+
+    <!-- Theme toggle -->
+    <div class="btn-row">
+      <button onclick="setTheme('light')">Light Theme</button>
+      <button onclick="setTheme('dark')">Dark Theme</button>
+      <button onclick="setTheme('system')">System Theme</button>
+    </div>
+
+    <!-- Manual cookie tester -->
+    <div class="tester">
+      <h2>Cookie Tester</h2>
+
+      <div class="input-row">
+        <input id="cookie-name"  placeholder="Name" />
+        <input id="cookie-value" placeholder="Value" />
+        <button onclick="handleSet()">Set Cookie</button>
+      </div>
+
+      <div class="input-row">
+        <input id="get-name" placeholder="Cookie name to get" />
+        <button onclick="handleGet()">Get</button>
+        <button onclick="handleDelete()">Delete</button>
+      </div>
+
+      <div class="btn-row">
+        <button onclick="handleGetAll()">Get All Cookies</button>
+        <button onclick="handleClear()">Clear Output</button>
+      </div>
+    </div>
+
+    <!-- Output -->
+    <pre id="output"></pre>
+  </div>
+
+  <script src="cookies.js"></script>
+
+</body>
+</html>
