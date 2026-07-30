@@ -1,0 +1,36 @@
+# Fullstack AI Pipeline - Ignore file
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Outputs
+output/
+**/output/
+
+# Testing
+.pytest_cache/
+.coverage
+
+# Logs
+logs/
+*.log
+
+# IDE (except project-specific configs)
+.vscode/
+.idea/
+
+# Graph images (if generated)
+*.png
+*.jpg
+graph_builder_image/
