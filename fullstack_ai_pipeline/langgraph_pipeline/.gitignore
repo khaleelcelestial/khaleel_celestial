@@ -95,9 +95,7 @@ dmypy.json
 .project
 .pydevproject
 .settings/
-
-# Kiro-specific (keep .claude directory for launch configs)
-# .claude/ - intentionally NOT ignored
+.claude/
 
 # ============================================================
 # OS Files
