@@ -80,7 +80,8 @@ def project_dir_for(project_id: str) -> Path:
 
 def save_project_snapshot(project_dir: Path, project_id: str, user_request: str,
                           execution_plan: dict, requirements: str, architecture: str,
-                          tasks: list, workspace: dict, stage_status: dict = None) -> None:
+                          tasks: list, workspace: dict, stage_status: dict = None,
+                          acceptance_criteria: list = None) -> None:
     import time
 
     project_dir = Path(project_dir)
@@ -101,6 +102,7 @@ def save_project_snapshot(project_dir: Path, project_id: str, user_request: str,
         "requirements": requirements,
         "architecture": architecture,
         "tasks": tasks,
+        "acceptance_criteria": acceptance_criteria or [],
         "created_at": created_at,
         "updated_at": time.time(),
         # The exact per-stage status this run ended with (done/failed/

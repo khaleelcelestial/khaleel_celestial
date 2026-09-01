@@ -226,10 +226,23 @@ class SupervisorCapability:
             if len(review_issues) > 8:
                 issue_labels.append(f"... and {len(review_issues) - 8} more")
 
+            # Task checklist progress (see task_status in core/state.py,
+            # self-reported by database/backend/frontend's RUN nodes) - open
+            # task text capped at 8 for the same reason as issue_labels
+            # above, the count still shows the true total.
+            tasks = state["project"].get("tasks", [])
+            task_status = state["runtime"].get("task_status", {})
+            done_count = sum(1 for v in task_status.values() if v)
+            open_tasks = [t for i, t in enumerate(tasks) if not task_status.get(i)]
+            open_task_labels = open_tasks[:8]
+            if len(open_tasks) > 8:
+                open_task_labels.append(f"... and {len(open_tasks) - 8} more")
+
             status = f"""User request / change request: {state.get("user_request", "")}
 Stage status: {stage_status}
 Already given a real attempt at this change request THIS run: {already_addressed_this_run or 'none yet'}
 Quality passed last testing pass: {quality_passed if quality_passed is not None else 'not tested yet'}
+Task checklist: {done_count}/{len(tasks)} done. Open tasks: {open_task_labels or 'none'}
 Outstanding issues ({len(review_issues)}): {issue_labels or 'none'}
 Testing agent's last full report: {testing_report or 'not run yet'}
 Deployment agent's last full report: {deployment_status or 'not deployed yet'}"""
@@ -246,6 +259,11 @@ Available agents right now: {sorted(allowed)}
 - "testing": runs static checks + LLM review + real tests over what's been built so far
 - "deployment": packages and deploys (docker) what's been built
 - "done": everything this plan needs is built, tested with no outstanding issues, and deployed
+
+The "Task checklist" line shows Planner's concrete task list and how many are self-reported done so
+far - use the open-task text as extra evidence for WHAT is actually still missing (e.g. an open task
+naming a page/endpoint that stage_status alone wouldn't tell you about), not as a routing rule by
+itself - stage_status/review_issues/the request text below still decide WHICH agent to route to.
 
 Rules (in priority order - check them top to bottom, act on the FIRST one that applies):
 1. "not tested yet" is NOT a failure - it means Testing has never run. If quality_passed shows
@@ -457,6 +475,7 @@ Output ONLY a JSON object: {{"next": "...", "reason": "..."}}"""
                 execution_plan=plan,
                 requirements=state["project"].get("requirements", ""),
                 architecture=state["project"].get("architecture", ""),
+                acceptance_criteria=state["project"].get("acceptance_criteria", []),
                 tasks=state["project"].get("tasks", []),
                 workspace=workspace,
                 stage_status=stage_status,

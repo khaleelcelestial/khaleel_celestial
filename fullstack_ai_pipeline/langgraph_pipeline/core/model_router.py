@@ -23,117 +23,27 @@ def _create_anthropic_client(model_name: str, api_key: str, temperature: float):
     return ChatAnthropic(model=model_name, api_key=api_key, temperature=temperature, max_tokens=8000)
 
 
-_AIGATEWAY_BASE_URL = "https://aigateway-api.siddu.online"
+# Azure AI Foundry endpoint hosting this deployment - not a secret (only the
+# API key is), so it's a constant here rather than another .env entry.
+_AZURE_OPENAI_BASE_URL = "https://ganesham03-3557-resource.services.ai.azure.com/openai/v1"
 
 
-class _AIGatewayResponse:
-    """Minimal stand-in for a LangChain AIMessage - ModelRouter.invoke() only ever reads .content."""
-    def __init__(self, content: str):
-        self.content = content
-
-
-class _AIGatewayClient:
-    """
-    Lightweight, non-LangChain client for the remote AI Gateway REST API
-    (see CONNECT.md) - deliberately NOT a real LangChain BaseChatModel,
-    because it doesn't need to be: every caller of this client goes through
-    ModelRouter.invoke(), which only ever calls client.invoke(lc_messages)
-    and reads response.content. It must NEVER be handed to run_tool_agent()
-    (create_react_agent calls .bind_tools() on the model, which this class
-    doesn't implement) - that's enforced by keeping "aigateway" out of the
-    REASONING/CODING tiers in model_config.py, not by anything in this class.
-
-    No model name is ever sent - the whole point of this gateway is that it
-    auto-selects the best of its own hosted models per request; forcing a
-    specific one would defeat that.
-    """
-
-    def __init__(self, temperature: float, timeout: float = 90.0):
-        self.temperature = temperature
-        self.timeout = timeout
-
-    def invoke(self, lc_messages: list) -> "_AIGatewayResponse":
-        import json
-        import urllib.request
-        import urllib.error
-
-        payload_messages = []
-        for m in lc_messages:
-            role = "system" if m.__class__.__name__ == "SystemMessage" else (
-                "assistant" if m.__class__.__name__ == "AIMessage" else "user"
-            )
-            payload_messages.append({"role": role, "content": m.content})
-
-        body = json.dumps({
-            "messages": payload_messages,
-            "temperature": self.temperature,
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            f"{_AIGATEWAY_BASE_URL}/chat",
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                # Without a browser-like UA, whatever WAF/proxy sits in
-                # front of this gateway 403s the request outright - curl
-                # (and a normal browser) pass fine, urllib's default
-                # "Python-urllib/3.x" UA gets blocked as a bot. Confirmed by
-                # direct side-by-side test: identical payload, curl -> 200,
-                # urllib default UA -> 403.
-                "User-Agent": "Mozilla/5.0 (compatible; langgraph-pipeline/1.0)",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"AI Gateway request failed: {e}") from e
-
-        # /chat's "message" field is an object ({"role":...,"content":...}),
-        # not a plain string - despite CONNECT.md's own Python example
-        # printing r.json()["message"] directly as if it were one. /generate
-        # (not used here) returns a plain string under "response" instead.
-        message = data.get("message")
-        content = message.get("content") if isinstance(message, dict) else (message or data.get("response") or "")
-        if not content:
-            raise RuntimeError(f"AI Gateway returned no content: {data}")
-
-        # Surface which model it actually picked - not known until the
-        # response comes back, so this is a follow-up log line rather than
-        # part of the "Using: ..." line printed before the call.
-        from core.logger import get_logger
-        routing = data.get("routing_decision") or {}
-        picked = data.get("model_used") or routing.get("selected_model")
-        if picked:
-            get_logger().info(f"  Gateway auto-selected: {picked}")
-
-        return _AIGatewayResponse(content)
-
-
-def _create_aigateway_client(model_name: str, api_key: str, temperature: float):
-    return _AIGatewayClient(temperature=temperature)
-
-
-def _create_ollama_client(model_name: str, api_key: str, temperature: float):
-    from langchain_ollama import ChatOllama
-    return ChatOllama(
+def _create_azure_openai_client(model_name: str, api_key: str, temperature: float):
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
         model=model_name,
+        base_url=_AZURE_OPENAI_BASE_URL,
+        api_key=api_key,
         temperature=temperature,
-        # Big enough to hold a pre-injected schema.sql/openapi.yaml plus a
-        # growing tool-call history without silently truncating context -
-        # Ollama's own default (2048-4096) is too small for that once an
-        # agent is several tool-call steps in.
-        num_ctx=8192,
-        # A generous ceiling, not a target - generation still stops at the
-        # model's own end-of-response token; this just bounds worst-case
-        # latency against a runaway/looping completion.
-        num_predict=4096,
-        # Keeps the model loaded in memory between calls instead of Ollama's
-        # default ~5-minute idle unload - a cold load costs ~15-20s (measured
-        # directly), which would otherwise be paid again on every single
-        # call across a long supervisor loop.
-        keep_alive="30m",
+        # This deployment (gpt-5.4-mini) is served through Azure AI Foundry's
+        # OpenAI-v1-compatible /responses endpoint, not the older
+        # /chat/completions one - confirmed by the user's own working sample
+        # (client.responses.create(...)). use_responses_api=True makes
+        # ChatOpenAI route through /responses while still translating
+        # LangChain's normal message/tool-calling interface transparently,
+        # so bind_tools() (needed by backend_agent/frontend_agent/
+        # deployment_agent) still works the same as any other provider here.
+        use_responses_api=True,
     )
 
 
@@ -145,8 +55,7 @@ PROVIDER_CLIENT_FACTORIES = {
     "groq": _create_groq_client,
     "mistral": _create_mistral_client,
     "anthropic": _create_anthropic_client,
-    "ollama": _create_ollama_client,
-    "aigateway": _create_aigateway_client,
+    "azure_openai": _create_azure_openai_client,
 }
 
 
@@ -183,6 +92,12 @@ class ModelRouter:
     def chain_length(self, skill_name: str) -> int:
         """How many (account, provider) attempts are available for this skill."""
         return len(self._chain(skill_name))
+
+    def chain_info(self, skill_name: str, attempt: int) -> Tuple[str, str, str]:
+        """(account, provider, model_key) for a given attempt - public accessor
+        so callers (agent_runtime.py) can log which credential is in use
+        without reaching into the "private" chain cache directly."""
+        return self._chain(skill_name)[attempt]
 
     def get_client(self, skill_name: str, attempt: int = 0) -> Tuple[Any, str, float]:
         """
@@ -243,11 +158,17 @@ class ModelRouter:
         """
         from langchain_core.messages import HumanMessage, SystemMessage
         from core.logger import get_logger
+        from core.model_config import SKILL_TO_STAGE, SKILL_TO_OPERATION
         logger = get_logger()
 
+        stage = SKILL_TO_STAGE.get(skill_name, "other")
+        operation = SKILL_TO_OPERATION.get(skill_name, "other")
+        account, provider, _model_key = self.chain_info(skill_name, attempt)
+        model_name = None
+        call_id = logger.llm_call_start()
         try:
             client, model_name, _temperature = self.get_client(skill_name, attempt)
-            logger.model_attempt(model_name, attempt)
+            logger.model_attempt(model_name, attempt, provider=provider, account=account, stage=stage)
 
             lc_messages = []
             for msg in messages:
@@ -257,12 +178,27 @@ class ModelRouter:
                     lc_messages.append(HumanMessage(content=msg["content"]))
 
             response = client.invoke(lc_messages)
-            return response.content
+            usage = getattr(response, "usage_metadata", None) or {}
+            logger.llm_call_completed(call_id, skill_name, stage, operation, model_name, provider, account, attempt,
+                                      input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                                      total_tokens=usage.get("total_tokens"))
+            # .text (not .content) - every existing provider returns a plain
+            # string in .content, but Azure's Responses API (see
+            # _create_azure_openai_client) returns a list of content-block
+            # dicts instead. .text normalizes both shapes to a plain string,
+            # which every skill calling this (analyze_request_skill,
+            # generate_schema_skill, etc.) requires - they all do
+            # .strip()/regex/json.loads() on the return value directly.
+            return response.text
 
         except Exception as e:
             chain_length = self.chain_length(skill_name)
             will_retry = attempt + 1 < chain_length
-            logger.model_attempt_failed(attempt, str(e), will_retry)
+            detail = str(e)
+            from core.logger import _classify_error
+            logger.model_attempt_failed(attempt, detail, will_retry, provider=provider, model=model_name or skill_name)
+            logger.llm_call_failed(call_id, skill_name, stage, operation, model_name or skill_name, provider,
+                                   account, attempt, error_type=_classify_error(detail), error_message=detail)
 
             if will_retry:
                 return self.invoke(skill_name, messages, attempt + 1)

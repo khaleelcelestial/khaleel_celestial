@@ -50,6 +50,22 @@ Repeat that block for every file. To remove a file instead of writing it, use:
 Write EVERY file the task needs in THIS SAME response, in one pass - there is no follow-up turn to
 add a file you forgot. Do not truncate or abbreviate a file's content with "..." or "// rest unchanged" -
 each @@@FILE@@@ block must contain that file's COMPLETE content as it should exist on disk.
+
+CRITICAL: only output a @@@FILE@@@ block for a file whose content actually needs to change for THIS
+specific task. Some existing files are shown to you below purely as reference/context (to understand
+the current app - its routes, models, conventions) - that does NOT mean you should rewrite them. If a
+reference file doesn't need to change, do not include a @@@FILE@@@ block for it at all. Never
+restructure, reorganize, rename, or "improve" a file's existing content (routes, components, functions)
+unless the task explicitly asks for that specific change - an app-shell/routing file that already has
+routes for pages A, B, and C must still have all of A, B, and C after your edit, even if your only
+actual job was to add page D. When in doubt about whether to touch a file: don't.
+
+CRITICAL for list/array content (navigation items, menu entries, route tables, dropdown options, and
+similar): when adding one entry to an existing list, copy every existing entry into your output
+UNCHANGED and append/insert only the new one. Do not regenerate the list from memory or from what you
+infer it "should" contain - reproduce it verbatim from the existing file content shown to you, plus
+your one change. Silently dropping an existing entry while adding a new one is the single most common
+mistake here - re-check your output list against the existing file's list before finishing.
 """
 
 _FILE_BLOCK_PATTERN = re.compile(r"@@@FILE:\s*(.+?)@@@\r?\n(.*?)(?=\r?\n@@@END@@@)\r?\n@@@END@@@", re.DOTALL)
@@ -88,7 +104,9 @@ def write_batch_files(project_dir, write_prefix: str, files: dict[str, str],
     turn to find out.
     """
     logger = get_logger()
+    stage_label = write_prefix.rstrip("/") if write_prefix else ""
     written, deleted, refused = [], [], []
+    unchanged = 0
 
     for path, content in files.items():
         normalized = path.replace("\\", "/").lstrip("./")
@@ -102,8 +120,30 @@ def write_batch_files(project_dir, write_prefix: str, files: dict[str, str],
             refused.append(path)
             logger.warning(f"  Batch write refused '{path}': {e}")
             continue
+        # No redundant writes: a file the model regenerated identically to
+        # what's already on disk (common on a revision round where most of
+        # the response is just "confirming" unchanged files) costs a real
+        # filesystem write and - more importantly downstream - makes
+        # touched_since()-based "did this round make real progress" checks
+        # and file-content-hash caches (e.g. skills/review_cache.py) treat
+        # it as freshly changed when nothing actually changed.
+        existed = full_path.exists() and full_path.is_file()
+        prior_content = None
+        if existed:
+            try:
+                prior_content = full_path.read_text(encoding="utf-8")
+                if prior_content == content:
+                    unchanged += 1
+                    logger.file_changed(stage_label, path, "SKIPPED",
+                                       size_before=len(prior_content), size_after=len(content))
+                    continue
+            except (UnicodeDecodeError, OSError):
+                prior_content = None  # can't compare - fall through and write normally
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
+        logger.file_changed(stage_label, path, "MODIFIED" if existed else "CREATED",
+                           size_before=len(prior_content) if prior_content is not None else None,
+                           size_after=len(content))
         written.append(path)
 
     for path in deletes:
@@ -117,14 +157,17 @@ def write_batch_files(project_dir, write_prefix: str, files: dict[str, str],
             refused.append(path)
             continue
         if full_path.exists() and full_path.is_file():
+            size_before = full_path.stat().st_size
             full_path.unlink()
             deleted.append(path)
+            logger.file_changed(stage_label, path, "DELETED", size_before=size_before)
             parent = full_path.parent
             while parent != project_dir and parent.exists() and not any(parent.iterdir()):
                 parent.rmdir()
                 parent = parent.parent
 
     logger.info(f"  Batch generation: wrote {len(written)}, deleted {len(deleted)}"
+               + (f", {unchanged} unchanged (skipped)" if unchanged else "")
                + (f", refused {len(refused)}" if refused else ""))
     return written, deleted, refused
 

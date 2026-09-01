@@ -17,8 +17,10 @@ from core.state import ProjectState, BuildStatus
 from core.stage_loop import MAX_STAGE_ATTEMPTS, checkpoint
 from tools.database_tools import GenerateSchemaTool, ValidateSchemaTool
 from tools.contract_tools import GenerateOpenAPITool
-from skills.project_registry import project_dir_for
-from skills.quality_skills import check_schema_matches_contract
+from skills.project_registry import project_dir_for, sync_workspace_from_disk
+from skills.db_validators import run_val_validators
+from skills.planning_skills import mark_tasks_complete_skill
+from skills.acceptance_test_generator import generate_acceptance_tests_skill
 from core.logger import get_logger
 
 STAGE = "database"
@@ -61,6 +63,7 @@ class DatabaseCapability:
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0) + 1
         feedback = state["runtime"].get("stage_feedback", {}).get(STAGE, "")
         logger.info(f"DB_RUN attempt {attempts}/{MAX_STAGE_ATTEMPTS}")
+        logger.stage_started(STAGE, attempts)
 
         # Only treat schema.sql/openapi.yaml on disk as "existing, revise it"
         # on a genuine --update run. On a fresh "build", real backend/frontend
@@ -112,6 +115,70 @@ class DatabaseCapability:
             contract_path.write_text(openapi_spec, encoding="utf-8")
             logger.success(f"OpenAPI spec written to openapi.yaml ({len(openapi_spec)} chars)")
 
+        # Did this round's output actually differ from what was already on
+        # disk? check_val uses this to decide whether backend/frontend/
+        # testing genuinely need invalidating - confirmed real bug without
+        # this: a database round that's really just RE-VALIDATING an
+        # already-correct, unchanged schema (e.g. stage_status was stuck
+        # "pending" from an earlier unrelated run and this round is only
+        # confirming it's fine) was unconditionally resetting backend and
+        # frontend back to "pending" too, even for a change_request that
+        # never touched the schema at all - wasting a full backend/frontend
+        # re-run cycle (and the rate-limited API calls that costs) on every
+        # such re-validation.
+        schema_changed = bool(plan.get("database")) and schema != existing_schema
+        contract_changed = bool(plan.get("contract")) and openapi_spec != existing_spec
+
+        # Self-report which of Planner's tasks this round's schema/contract
+        # work satisfies - only worth asking when something actually
+        # changed (see task_status in core/state.py), never on a no-op
+        # revalidation of an already-correct schema.
+        task_status_update = {}
+        if schema_changed or contract_changed:
+            architecture = state["project"].get("architecture", "")
+            summary = f"schema.sql:\n{schema}\n\nopenapi.yaml:\n{openapi_spec}"
+            for i in mark_tasks_complete_skill(tasks, architecture, "database", summary):
+                task_status_update[i] = True
+
+            # Database's own call into the SHARED Acceptance Test Generator
+            # (skills/acceptance_test_generator.py) - only regenerated when
+            # the schema/contract actually changed, same reasoning as the
+            # task-marking call above (no point re-asking on a no-op
+            # revalidation round). test_database.py becomes another real
+            # DB_RUN artifact, and DB_VAL's PostgreSQL Validator executes it
+            # for real against a live temp database (see
+            # skills/db_postgres_validator.py).
+            acceptance_criteria = state["project"].get("acceptance_criteria", [])
+            if acceptance_criteria:
+                test_guidance = """This tests a PostgreSQL database schema and its OpenAPI contract.
+Tests MUST connect to a real PostgreSQL database using the DATABASE_URL environment variable (e.g. via
+psycopg2.connect(os.environ["DATABASE_URL"])) and verify the acceptance criteria against real
+INSERT/UPDATE/DELETE/SELECT behavior - actually insert a row, actually attempt an insert that should be
+rejected by a constraint and assert it IS rejected, actually verify a soft-deleted row still exists in
+the table but is excluded from an "active" query, actually verify a foreign key constraint rejects an
+orphan reference. Use a pytest fixture (conftest-style, defined in the same file) that opens one
+connection via DATABASE_URL and wraps each test in its own transaction that's rolled back at the end,
+so tests never pollute each other or leave real data behind. Do not assume any table already has rows -
+insert whatever fixture data each test needs itself."""
+                tests_code = generate_acceptance_tests_skill(
+                    "database", f"schema.sql:\n{schema}\n\nopenapi.yaml:\n{openapi_spec}",
+                    acceptance_criteria, architecture, tasks, test_guidance,
+                )
+                if tests_code:
+                    (project_dir / "test_database.py").write_text(tests_code, encoding="utf-8")
+                    logger.success(f"Generated test_database.py ({len(tests_code)} chars)")
+
+        # Keep the Project Index (skills/project_index.py) fresh - Database
+        # doesn't consume it itself (it only ever handles two monolithic
+        # files, see that module's docstring for why incremental tool-
+        # calling doesn't apply here), but Backend/Frontend's own
+        # incremental rounds need schema.sql/openapi.yaml changes reflected
+        # so their candidate-file hints stay accurate.
+        if schema_changed or contract_changed:
+            from skills.project_index import update_project_index
+            fresh_workspace = sync_workspace_from_disk(project_dir, state["project"].get("workspace", {}))
+            update_project_index(project_dir, fresh_workspace)
+
         logger.node_complete("database_run")
         return {
             "project": {
@@ -129,8 +196,18 @@ class DatabaseCapability:
             "runtime": {
                 "stage_status": {"database": "validating"},
                 "stage_attempts": {STAGE: attempts},
+                "task_status": task_status_update,
+                # What schema.sql looked like on disk BEFORE this round's
+                # write - DB_VAL's MigrationValidator diffs this against the
+                # new schema to catch an accidental destructive change (a
+                # table/column that silently vanished with no explicit DROP
+                # statement for it) - exactly the class of bug that slipped
+                # through before (a schema revision that collapsed down to
+                # almost nothing, confirmed live this session).
+                "previous_schema": existing_schema,
                 "current_stage": "database_run",
                 "completed_nodes": ["database_run"],
+                "schema_changed_this_round": schema_changed or contract_changed,
                 "logs": [f"Database: schema={'yes' if schema else 'no'}, contract={'yes' if openapi_spec else 'no'}"]
             }
         }
@@ -189,7 +266,18 @@ class DatabaseCapability:
 
         schema = state["project"]["workspace"].get("database", {}).get("schema", "")
         openapi_spec = state["project"]["workspace"].get("contract", {}).get("openapi_spec", "")
-        all_mismatches = check_schema_matches_contract(schema, openapi_spec) if (schema and openapi_spec) else []
+        previous_schema = state["runtime"].get("previous_schema", "")
+
+        # The shared Acceptance Test Generator's output (see database.py's
+        # run()), if DB_RUN wrote one this round - executed for real by the
+        # PostgreSQL Validator's Requirement Test Runner as part of
+        # run_val_validators below, not read here for any other purpose.
+        test_path = project_dir_for(state["project"]["project_id"]) / "test_database.py"
+        test_file_content = test_path.read_text(encoding="utf-8") if test_path.exists() else ""
+
+        all_mismatches = run_val_validators(
+            schema, openapi_spec, previous_schema, test_file_content=test_file_content
+        ) if schema else []
 
         # A specific mismatch that keeps recurring across MAX_REVIEW_REPEATS
         # OUTER rounds - not just this round's 3 internal attempts - despite
@@ -229,9 +317,15 @@ class DatabaseCapability:
         # A schema/contract revision invalidates whatever Backend/Frontend
         # already built against the OLD schema, and any Testing verdict
         # measured against that old code - reset them (never resurrecting a
-        # stage the plan doesn't actually need).
+        # stage the plan doesn't actually need). Gated on schema_changed_this_
+        # round (set by database_run - see its docstring there): without this
+        # gate, a round that only RE-VALIDATES an already-correct, unchanged
+        # schema (e.g. stage_status was stuck "pending" from an unrelated
+        # earlier run) was unconditionally bouncing backend/frontend back to
+        # "pending" too, even for a change_request that never touched the
+        # schema - confirmed live, wasting a full re-run cycle every time.
         plan = state["runtime"]["execution_plan"]
-        if passed:
+        if passed and state["runtime"].get("schema_changed_this_round"):
             if plan.get("backend"):
                 new_status["backend"] = "pending"
             if plan.get("frontend"):

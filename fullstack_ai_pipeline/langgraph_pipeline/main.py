@@ -45,6 +45,11 @@ def _base_runtime(execution_plan: dict, mode: str = "build", stage_status: dict 
         "stage_attempts": {},
         "stage_feedback": {},
         "stage_progress": {},
+        "task_status": {},
+        "previous_schema": "",
+        "previous_backend_files": {},
+        "previous_openapi_for_backend": "",
+        "previous_frontend_files": {},
         # For a fresh build, Planner sets this from the execution plan on its
         # first move - {} here is fine, it runs before the Supervisor ever
         # looks at it. For update mode, Planner is SKIPPED entirely (the
@@ -65,6 +70,7 @@ def initialize_state(user_request: str) -> ProjectState:
             "requirements": "",
             "architecture": "",
             "tasks": [],
+            "acceptance_criteria": [],
             "workspace": {
                 "database": {
                     "version": 0,
@@ -167,6 +173,44 @@ def initialize_update_state(project_id: str, change_request: str) -> ProjectStat
     for flag in newly_added:
         saved_stage_status.pop(_plan_flag_to_stage_status_key[flag], None)
 
+    # Bug fix: "newly_added" only covers a stage the ORIGINAL build never
+    # needed at all. But every non-trivial --update also asks for more
+    # backend/frontend/database work on a stage that was already part of
+    # the plan from day one (e.g. "add a page", "add a column") - and
+    # since that stage's saved_stage_status is already "done" from a PRIOR
+    # run, _resume_status below just returns "done" again unchanged, so the
+    # Supervisor never re-dispatches it and the update silently no-ops
+    # straight to testing/deployment on unmodified code. Confirmed exactly
+    # this happening: a large multi-page/schema update request came back
+    # "PASSED" with zero of the requested files ever touched, because
+    # backend/frontend were already "done" from the original build and
+    # weren't "newly added" to the plan (they were already True in it).
+    # Fix: ANY stage fresh_plan says is needed for THIS SPECIFIC request
+    # gets forced to pending, not just ones new to the plan overall -
+    # fresh_plan is already the LLM's classification of what stages this
+    # change request actually touches, so it's the right signal to use.
+    # Must be set to "pending" explicitly, not just popped: popping alone
+    # doesn't work here because _resume_status's fallback for a missing
+    # saved status is `"done" if has_files else "pending"` - and
+    # has_backend/has_frontend are already True from the original build's
+    # files, so a pop still silently resolved back to "done" (confirmed by
+    # this exact bug still reproducing with only the pop in place).
+    # "contract" is deliberately excluded here even though it's in
+    # _plan_flag_to_stage_status_key (mapped to "database" for newly_added's
+    # purposes) - the classifier's own rule makes contract=True almost
+    # unconditionally ("contract: true if database OR backend OR frontend is
+    # true"), so treating it as a signal here forced the database stage back
+    # to pending on EVERY backend/frontend-only request, including a plain
+    # import-name fix with zero schema involvement (confirmed reproducing:
+    # stage_status showed database:pending for a request that only touched
+    # frontend/src/pages/UserDetail.jsx). Only the specific "database" flag
+    # is a real signal that the schema itself needs work.
+    for flag, needed_now in fresh_plan.items():
+        if flag == "contract":
+            continue
+        if needed_now and flag in _plan_flag_to_stage_status_key:
+            saved_stage_status[_plan_flag_to_stage_status_key[flag]] = "pending"
+
     has_database = bool(workspace.get("database", {}).get("schema") or
                          workspace.get("contract", {}).get("openapi_spec"))
     has_backend = bool(workspace.get("backend", {}).get("files"))
@@ -205,6 +249,7 @@ def initialize_update_state(project_id: str, change_request: str) -> ProjectStat
             "requirements": metadata.get("requirements", ""),
             "architecture": metadata.get("architecture", ""),
             "tasks": metadata.get("tasks", []),
+            "acceptance_criteria": metadata.get("acceptance_criteria", []),
             "workspace": workspace
         },
         "runtime": _base_runtime(execution_plan, mode="update", stage_status=stage_status)
@@ -301,6 +346,7 @@ def _salvage_if_needed(final_state) -> None:
             execution_plan=final_state.get("runtime", {}).get("execution_plan", {}),
             requirements=final_state.get("project", {}).get("requirements", ""),
             architecture=final_state.get("project", {}).get("architecture", ""),
+            acceptance_criteria=final_state.get("project", {}).get("acceptance_criteria", []),
             tasks=final_state.get("project", {}).get("tasks", []),
             workspace=workspace,
             stage_status=final_state.get("runtime", {}).get("stage_status", {}),
@@ -330,6 +376,7 @@ def run_pipeline(user_request: str, thread_id: str = "default",
 
     logger = get_logger()
     logger.start()
+    logger.start_run(project_id=project_id or "", mode="update" if update else "build")
 
     # Check for API key - any one configured credential is enough to start;
     # model_router's fallback chains handle the rest at call time.
@@ -414,13 +461,17 @@ def run_pipeline(user_request: str, thread_id: str = "default",
         # real final state (after reducers merged every node's writes) from
         # the checkpointer instead.
         final_state = app.get_state(config).values
-        
+
+        final_stage_status = {}
         # Display final status
         if final_state:
             final_stage_status = final_state.get("runtime", {}).get("stage_status", {})
             logger.info("\n" + StageTracker.get_progress_summary(final_stage_status))
 
         logger.summary(step_count)
+        if not logger.project_id:
+            logger.project_id = (final_state or {}).get("project", {}).get("project_id", "")
+        logger.pipeline_completed(final_stage_status)
 
         # Register the project even on a "successful" run that never actually
         # reached Deployment (e.g. the supervisor hit its round backstop after
@@ -436,6 +487,10 @@ def run_pipeline(user_request: str, thread_id: str = "default",
         import traceback
         traceback.print_exc()
         final_state = app.get_state(config).values
+        if not logger.project_id:
+            logger.project_id = (final_state or {}).get("project", {}).get("project_id", "")
+        logger.pipeline_failed(str(e), stage=(final_state or {}).get("runtime", {}).get("current_stage", ""),
+                               stage_status=(final_state or {}).get("runtime", {}).get("stage_status", {}))
         _salvage_if_needed(final_state)
         if final_state:
             print("\n📊 Partial state before failure:")

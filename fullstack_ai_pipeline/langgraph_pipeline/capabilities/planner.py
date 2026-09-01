@@ -9,7 +9,8 @@ one, not implied by scattered `if plan.get(...)` checks in later nodes.
 
 from core.state import ProjectState
 from tools.planning_tools import (
-    AnalyzeRequestTool, ExtractRequirementsTool, CreateTaskListTool, ChooseStackTool
+    AnalyzeRequestTool, ExtractRequirementsTool, CreateTaskListTool, ChooseStackTool,
+    ExtractAcceptanceCriteriaTool
 )
 from skills.project_registry import project_dir_for, slugify
 from core.logger import get_logger
@@ -21,6 +22,7 @@ class PlannerCapability:
         self.requirements_tool = ExtractRequirementsTool()
         self.tasks_tool = CreateTaskListTool()
         self.stack_tool = ChooseStackTool()
+        self.acceptance_criteria_tool = ExtractAcceptanceCriteriaTool()
 
     def run(self, state: ProjectState) -> dict:
         logger = get_logger()
@@ -38,15 +40,25 @@ class PlannerCapability:
         requirements = self.requirements_tool.execute(user_request)
         logger.success(f"Requirements extracted ({len(requirements)} chars)")
 
+        # Stack is chosen BEFORE the task list now (reordered from the
+        # original analyze->extract->tasks->stack sequence) - create_task_list_skill
+        # takes the architecture as context so tasks name real tables/
+        # endpoints/pages instead of generic placeholders.
+        logger.info("Calling choose_stack_skill...")
+        architecture = self.stack_tool.execute(user_request, execution_plan)
+        logger.success("Technology stack chosen")
+
         logger.info("Calling create_task_list_skill...")
-        tasks = self.tasks_tool.execute(user_request, requirements)
+        tasks = self.tasks_tool.execute(user_request, requirements, architecture)
         logger.success(f"Generated {len(tasks)} tasks")
         for i, task in enumerate(tasks, 1):
             print(f"      {i}. {task}")
 
-        logger.info("Calling choose_stack_skill...")
-        architecture = self.stack_tool.execute(user_request, execution_plan)
-        logger.success("Technology stack chosen")
+        logger.info("Calling extract_acceptance_criteria_skill...")
+        acceptance_criteria = self.acceptance_criteria_tool.execute(user_request, requirements, architecture)
+        logger.success(f"Extracted {len(acceptance_criteria)} acceptance criteria")
+        for i, criterion in enumerate(acceptance_criteria, 1):
+            print(f"      {i}. {criterion}")
 
         project_id = state["project"].get("project_id") or slugify(user_request)
         project_dir = project_dir_for(project_id)
@@ -75,10 +87,12 @@ class PlannerCapability:
                 "requirements": requirements,
                 "architecture": architecture,
                 "tasks": tasks,
+                "acceptance_criteria": acceptance_criteria,
             },
             "runtime": {
                 "execution_plan": execution_plan,
                 "stage_status": stage_status,
+                "task_status": {i: False for i in range(len(tasks))},
                 "current_stage": "planner",
                 "completed_nodes": ["planner"],
                 "logs": [f"Planner: execution plan {execution_plan}, project_id={project_id}"]

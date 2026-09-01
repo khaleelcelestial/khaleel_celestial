@@ -45,6 +45,7 @@ def checkpoint(state) -> None:
         execution_plan=state["runtime"].get("execution_plan", {}),
         requirements=state["project"].get("requirements", ""),
         architecture=state["project"].get("architecture", ""),
+        acceptance_criteria=state["project"].get("acceptance_criteria", []),
         tasks=state["project"].get("tasks", []),
         workspace=workspace,
         stage_status=state["runtime"].get("stage_status", {}),
@@ -162,10 +163,21 @@ def route_after_ut(state, stage: str, run_node: str, val_node: str) -> str:
     remain, otherwise gives up (the UT node itself is responsible for
     marking stage_status "failed" in that case) and exits to the Supervisor.
     """
-    if stage_passed(state, stage):
-        return val_node
+    from core.logger import get_logger
+    logger = get_logger()
     attempts = state["runtime"].get("stage_attempts", {}).get(stage, 0)
-    return run_node if attempts < MAX_STAGE_ATTEMPTS else "supervisor"
+    feedback = state["runtime"].get("stage_feedback", {}).get(stage, "")
+
+    if stage_passed(state, stage):
+        logger.validator_result(stage, "ut", "UT", "PASS")
+        return val_node
+
+    logger.validator_result(stage, "ut", "UT", "FAIL", message=feedback)
+    if attempts < MAX_STAGE_ATTEMPTS:
+        logger.retry(stage, attempts, MAX_STAGE_ATTEMPTS, "UT failed", issue_count=None)
+        return run_node
+    logger.stage_completed(stage, "FAILED")
+    return "supervisor"
 
 
 def route_after_val(state, stage: str, run_node: str) -> str:
@@ -174,7 +186,19 @@ def route_after_val(state, stage: str, run_node: str) -> str:
     VAL failing loops back to RUN if attempts remain, otherwise gives up
     (marking stage_status "failed") and exits to the Supervisor.
     """
-    if stage_passed(state, stage):
-        return "supervisor"
+    from core.logger import get_logger
+    logger = get_logger()
     attempts = state["runtime"].get("stage_attempts", {}).get(stage, 0)
-    return run_node if attempts < MAX_STAGE_ATTEMPTS else "supervisor"
+    feedback = state["runtime"].get("stage_feedback", {}).get(stage, "")
+
+    if stage_passed(state, stage):
+        logger.validator_result(stage, "val", "VAL", "PASS")
+        logger.stage_completed(stage, "PASSED")
+        return "supervisor"
+
+    logger.validator_result(stage, "val", "VAL", "FAIL", message=feedback)
+    if attempts < MAX_STAGE_ATTEMPTS:
+        logger.retry(stage, attempts, MAX_STAGE_ATTEMPTS, "VAL failed", issue_count=None)
+        return run_node
+    logger.stage_completed(stage, "FAILED")
+    return "supervisor"

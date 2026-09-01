@@ -87,6 +87,8 @@ def merge_project(left: dict, right: dict) -> dict:
             result[key] = right[key]
     if "tasks" in right:
         result["tasks"] = result.get("tasks", []) + right["tasks"]
+    if "acceptance_criteria" in right:
+        result["acceptance_criteria"] = result.get("acceptance_criteria", []) + right["acceptance_criteria"]
     if "workspace" in right:
         result["workspace"] = _merge_workspace(result.get("workspace", {}), right["workspace"])
     return result
@@ -106,7 +108,8 @@ def merge_runtime(left: dict, right: dict) -> dict:
     for key in ("mode", "execution_plan", "quality_passed", "review_issues",
                 "final_project_path", "current_stage", "retry_count",
                 "next_agent", "supervisor_rounds", "deployment_status", "testing_report",
-                "consecutive_agent_failures"):
+                "consecutive_agent_failures", "schema_changed_this_round", "previous_schema",
+                "previous_backend_files", "previous_openapi_for_backend", "previous_frontend_files"):
         if key in right:
             result[key] = right[key]
     if "test_results" in right:
@@ -124,6 +127,11 @@ def merge_runtime(left: dict, right: dict) -> dict:
         # must not wipe out another stage's entry.
         if key in right:
             result[key] = {**result.get(key, {}), **right[key]}
+    if "task_status" in right:
+        # Shallow-merge by task index, same reasoning - one stage marking
+        # its own tasks done must not erase another stage's already-marked
+        # entries.
+        result["task_status"] = {**result.get("task_status", {}), **right["task_status"]}
     return result
 
 
@@ -175,6 +183,11 @@ class ProjectArtifacts(TypedDict):
     requirements: str
     architecture: str
     tasks: Annotated[list[str], operator.add]
+    acceptance_criteria: Annotated[list[str], operator.add]  # discrete, testable business-level
+                           # statements (e.g. "A rejected visitor must not appear in the approvals
+                           # list") - set once by Planner, consumed by the shared Acceptance Test
+                           # Generator (Database/Backend/Frontend/E2E/CICD) to produce real
+                           # requirement-driven pytest tests instead of implementation-detail checks
     workspace: Workspace
 
 
@@ -217,6 +230,31 @@ class RuntimeState(TypedDict):
                            # call. Lets the Supervisor recognize "we're in a quota outage" and
                            # stop burning rounds retrying the same doomed call, instead of only
                            # noticing after MAX_SUPERVISOR_ROUNDS.
+    schema_changed_this_round: bool  # set by database_run: did schema.sql/openapi.yaml's content
+                           # actually change vs what was already on disk this round? database_val
+                           # only cascades backend/frontend/testing back to "pending" when this is
+                           # True - a round that just RE-VALIDATES an already-correct, unchanged
+                           # schema (e.g. stage_status was stuck "pending" from an unrelated
+                           # earlier run) must not force a needless backend/frontend re-run.
+    previous_schema: str  # set by database_run: schema.sql's content BEFORE this round's write -
+                           # database_val's MigrationValidator diffs old vs. new to catch an
+                           # accidental destructive change (a table/column that silently vanished
+                           # with no explicit DROP statement for it).
+    previous_backend_files: dict[str, str]  # set by backend_run: backend/'s files BEFORE this
+                           # round's write - backend_val's Contract/CRUD validator diffs old vs.
+                           # new (paired with previous_openapi_for_backend) to tell a genuine
+                           # REGRESSION (an operation that worked before and is still required,
+                           # now silently gone) apart from ordinary in-progress work, same
+                           # reasoning as previous_schema.
+    previous_openapi_for_backend: str  # set by backend_run: openapi.yaml's content as of THIS
+                           # round's write - paired with previous_backend_files above.
+    previous_frontend_files: dict[str, str]  # set by frontend_run: frontend/'s files BEFORE this
+                           # round's write - frontend_val's route-regression check (advisory only,
+                           # unlike previous_backend_files' hard-blocking regression check - see
+                           # skills/fe_validators.py's RouteRegressionValidator docstring for why
+                           # frontend has no reliable signal to tell an intentional page removal
+                           # apart from an accidental one, the way a contract change or an explicit
+                           # DROP statement does for Backend/Database) diffs old vs. new routes.
     stage_attempts: dict[str, int]  # per-stage RUN/UT/VAL retry counter (e.g. "backend" -> 2) -
                            # each stage's own RUN node increments its entry; UT/VAL nodes read
                            # it to decide "loop back to RUN again" vs "give up and report failed
@@ -232,6 +270,12 @@ class RuntimeState(TypedDict):
                            # conditional edge right after RUN reads it to bail straight back to
                            # the Supervisor (no point running UT/VAL on an attempt that made zero
                            # real changes) instead of looping.
+    task_status: dict[int, bool]  # per-task completion, keyed by the task's 0-based index into
+                           # project.tasks - True once some stage's RUN self-reports having
+                           # satisfied it (see mark_tasks_complete_skill). Never reset by the
+                           # Supervisor (unlike stage_attempts/stage_feedback) - a task marked
+                           # done stays done across rounds; only a fresh Planner run (a new
+                           # project) starts this back at {}.
 
 
 # ---------- TOP-LEVEL STATE ----------

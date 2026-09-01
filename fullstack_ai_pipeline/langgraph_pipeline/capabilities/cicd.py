@@ -46,14 +46,45 @@ class CICDCapability:
         project_dir = project_dir_for(state["project"]["project_id"])
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0) + 1
         logger.info(f"CICD_RUN attempt {attempts}/{MAX_STAGE_ATTEMPTS}")
+        logger.stage_started(STAGE, attempts)
 
         from skills.docker_skills import write_docker_assets, generate_start_scripts
         from skills.quality_skills import generate_docs_skill
 
         workspace = sync_workspace_from_disk(project_dir, state["project"]["workspace"])
+        has_backend = bool(workspace.get("backend", {}).get("files"))
+        has_frontend = bool(workspace.get("frontend", {}).get("files"))
+        has_database = bool(workspace.get("database", {}).get("schema"))
 
         docker_artifacts = write_docker_assets(project_dir, workspace)
         logger.info(f"Generated docker assets: {docker_artifacts}")
+
+        # Deployment artifact pre-flight check - fails fast with a clear,
+        # specific message instead of a raw `docker compose up` error
+        # partway through an expensive build. Does NOT re-check source
+        # code correctness (DB/BE/FE_UT's own job, already done) - only
+        # that the deployment-time files those stages/write_docker_assets
+        # were supposed to produce actually exist on disk.
+        from skills.cicd_validators import validate_deployment_artifacts
+        artifact_problems = validate_deployment_artifacts(project_dir, has_backend, has_frontend, has_database)
+        if artifact_problems:
+            detail = "Missing required deployment artifact(s):\n" + "\n".join(f"- {p}" for p in artifact_problems)
+            logger.warning(detail)
+            logger.stage("deployment", "failed")
+            logger.node_complete("cicd_run")
+            return {
+                "project": {"workspace": workspace},
+                "runtime": {
+                    "deployment_status": detail,
+                    "stage_status": {"deployment": "failed"},
+                    "stage_attempts": {STAGE: attempts},
+                    "stage_progress": {STAGE: False},
+                    "current_stage": "cicd_run",
+                    "completed_nodes": ["cicd_run"],
+                    "failed_nodes": ["cicd_run"],
+                    "logs": [f"CICD_RUN: {detail}"]
+                }
+            }
 
         start_scripts = generate_start_scripts(project_dir, workspace)
         if start_scripts:
@@ -72,6 +103,7 @@ class CICDCapability:
             execution_plan=state["runtime"]["execution_plan"],
             requirements=state["project"].get("requirements", ""),
             architecture=state["project"].get("architecture", ""),
+            acceptance_criteria=state["project"].get("acceptance_criteria", []),
             tasks=state["project"].get("tasks", []),
             workspace=workspace,
             stage_status=state["runtime"].get("stage_status", {}),
@@ -114,6 +146,21 @@ class CICDCapability:
                 }
             }
 
+        # Rollback safety net (see skills/cicd_validators.py) - snapshot
+        # whatever image is CURRENTLY running for each service, BEFORE the
+        # upcoming build overwrites it, so a failed update can be reverted
+        # fast (no rebuild) instead of leaving a broken deployment live.
+        # Only ever non-empty on an UPDATE (a service that's never been
+        # deployed before has no ":latest" image yet to snapshot) - this
+        # is never mistaken for "safe to always roll back to" on a first
+        # deploy. Database data/schema is never part of this snapshot -
+        # see DATABASE ROLLBACK SAFETY in cicd_validators.py.
+        from skills.cicd_validators import snapshot_images_for_rollback
+        rollback_candidates = (["backend"] if has_backend else []) + (["frontend"] if has_frontend else [])
+        snapshotted_services = snapshot_images_for_rollback(project_dir, rollback_candidates)
+        if snapshotted_services:
+            logger.info(f"Snapshotted current image(s) for rollback safety: {snapshotted_services}")
+
         logger.success("Docker is available and running - building/starting the stack for real")
         try:
             build_result = subprocess.run(
@@ -127,7 +174,6 @@ class CICDCapability:
             build_ok = False
             build_detail = str(e)[:300]
 
-        has_database = bool(workspace.get("database", {}).get("schema"))
         if build_ok and has_database:
             # schema.sql's own docker-entrypoint-initdb.d mechanism only ever
             # runs ONCE, against a completely empty volume - on every deploy
@@ -153,6 +199,9 @@ class CICDCapability:
                 logger.warning(f"db container not healthy yet, skipping live schema apply: {db_health['detail']}")
                 build_ok = False
                 build_detail = f"db container not healthy: {db_health['detail']}"
+
+        logger.deployment("docker_build", "COMPLETED" if build_ok else "FAILED",
+                          {"detail": build_detail[:300]})
 
         if build_ok:
             logger.success(f"docker compose up --build -d succeeded")
@@ -192,7 +241,8 @@ class CICDCapability:
                 "stage_status": {"deployment": "validating"},
                 "final_project_path": str(project_dir),
                 "deployment_status": capped_summary,
-                "test_results": {"cicd_build_ok": build_ok, "cicd_build_detail": build_detail},
+                "test_results": {"cicd_build_ok": build_ok, "cicd_build_detail": build_detail,
+                                "cicd_rollback_candidates": snapshotted_services},
                 "stage_attempts": {STAGE: attempts},
                 "stage_progress": {STAGE: True},
                 "current_stage": "cicd_run",
@@ -275,8 +325,33 @@ class CICDCapability:
             if has_frontend:
                 frontend_ok, frontend_detail = http_reachable(f"http://localhost:{host_ports['frontend']}/")
 
-        passed = container_result["passed"] and backend_ok and frontend_ok
+        # Deployment smoke test: direct database connectivity to THIS
+        # deployed instance (not a throwaway one) - reuses E2E's own
+        # DatabaseIntegrationValidator rather than duplicating it (same
+        # deliberately narrow scope as there: connectivity + real schema
+        # presence, not a synthetic CRUD probe - see that class's
+        # docstring for why). Everything else the spec's "smoke test" list
+        # asks for (frontend/backend reachable, no 5xx) is already covered
+        # by the checks above.
+        db_ok, db_detail = True, "not applicable"
+        if container_result["passed"] and has_database:
+            from skills.e2e_validators import DatabaseIntegrationValidator
+            from skills.db_validators import build_schema_model
+            schema = workspace.get("database", {}).get("schema", "")
+            model = build_schema_model(schema) if schema else None
+            expected_tables = set(model.tables.keys()) if model and not model.parse_error else set()
+            db_problems = DatabaseIntegrationValidator().validate(
+                state["project"]["project_id"], host_ports, expected_tables
+            )
+            db_ok = not db_problems
+            db_detail = "; ".join(db_problems) if db_problems else "connected, schema present"
+
+        passed = container_result["passed"] and backend_ok and frontend_ok and db_ok
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0)
+        logger.deployment("health_check", "COMPLETED" if passed else "FAILED", {
+            "containers_ok": container_result["passed"], "backend_ok": backend_ok,
+            "frontend_ok": frontend_ok, "database_ok": db_ok,
+        })
 
         # Real gap this closes: "frontend: health=unhealthy" alone gives
         # neither the Supervisor nor whichever agent it routes to anything
@@ -297,6 +372,8 @@ class CICDCapability:
             for service in container_result.get("missing", []):
                 owner = _service_to_stage.get(service, service)
                 broken_service_logs += f"\n\n[{service} container never appeared in `docker compose ps` - a '{owner}' stage issue]"
+            if not db_ok:
+                broken_service_logs += f"\n\n[database connectivity check - this is a 'database' stage issue]: {db_detail}"
 
         if passed:
             logger.success(f"CICD_VAL passed: containers running+healthy ({container_result['detail']}), "
@@ -311,23 +388,73 @@ class CICDCapability:
         give_up = not passed and attempts >= MAX_STAGE_ATTEMPTS
         new_status = {"deployment": "done"} if passed else ({"deployment": "failed"} if give_up else {})
 
+        # Rollback (highest-priority addition) - only attempted once this
+        # attempt has genuinely given up (not on an ordinary retry-able
+        # failure - CICD_RUN gets its normal MAX_STAGE_ATTEMPTS shots at
+        # fixing this itself first), and only for services that actually
+        # HAD a previous working deployment to restore (see
+        # snapshot_images_for_rollback - empty on a first-ever deploy).
+        # Database data/schema is never rolled back - see
+        # cicd_validators.py's DATABASE ROLLBACK SAFETY notes.
+        rollback_tag = ""
+        deployment_metadata = {}
+        if give_up:
+            snapshotted_services = state["runtime"].get("test_results", {}).get("cicd_rollback_candidates", [])
+            if snapshotted_services:
+                from skills.cicd_validators import rollback_to_previous
+                logger.warning(f"Deployment validation failed after {attempts} attempt(s) - attempting "
+                               f"rollback to the previous working deployment...")
+                logger.rollback("STARTED", {"services": snapshotted_services})
+                rollback_ok, rollback_detail = rollback_to_previous(project_dir, snapshotted_services)
+                if rollback_ok:
+                    logger.success(f"Rollback succeeded: {rollback_detail}")
+                    rollback_tag = "failed_rolled_back"
+                    logger.rollback("COMPLETED", {"services": snapshotted_services, "detail": rollback_detail[:300]})
+                else:
+                    logger.warning(f"Rollback FAILED: {rollback_detail}")
+                    rollback_tag = "failed_rollback_failed"
+                    logger.rollback("FAILED", {"services": snapshotted_services, "detail": rollback_detail[:300]})
+                broken_service_logs += (f"\n\nROLLBACK {'SUCCEEDED' if rollback_ok else 'FAILED'}: "
+                                        f"{rollback_detail}\nNote: database data/schema is never automatically "
+                                        f"rolled back (see cicd_validators.py) - if this update changed the "
+                                        f"schema, manual database review may be required.")
+            else:
+                rollback_tag = "failed_no_previous_deployment"
+                broken_service_logs += ("\n\nNo previous working deployment was recorded - nothing available "
+                                        "to roll back to (this looks like a first deploy).")
+        elif passed:
+            # Deployment metadata (only meaningful on a real pass) - see
+            # cicd_validators.py's collect_deployment_metadata for exactly
+            # what's captured and why each field is conditional.
+            from skills.cicd_validators import collect_deployment_metadata
+            deployment_metadata = collect_deployment_metadata(
+                project_dir, host_ports, container_result, has_backend, has_frontend, has_database,
+                rollback_available=bool(state["runtime"].get("test_results", {}).get("cicd_rollback_candidates")),
+            )
+
         health_report = (f"\n\nContainer health: {container_result['detail']}\n"
                          f"Live HTTP check: backend {'OK' if backend_ok else 'FAIL'} ({backend_detail}), "
-                         f"frontend {'OK' if frontend_ok else 'FAIL'} ({frontend_detail}){broken_service_logs}")
+                         f"frontend {'OK' if frontend_ok else 'FAIL'} ({frontend_detail}), "
+                         f"database {'OK' if db_ok else 'FAIL'} ({db_detail}){broken_service_logs}"
+                         + (f"\n\nDEPLOYMENT_STATUS: {rollback_tag}" if rollback_tag else ""))
         detail = "" if passed else (f"deployment not fully healthy - containers_ok={container_result['passed']} "
-                                    f"({container_result['detail']}), backend={backend_ok}, frontend={frontend_ok}"
-                                    f"{broken_service_logs}")
+                                    f"({container_result['detail']}), backend={backend_ok}, frontend={frontend_ok}, "
+                                    f"database={db_ok}{broken_service_logs}")
 
         logger.stage("deployment", "done" if passed else ("failed" if give_up else "pending"))
+        logger.deployment("final_state", "COMPLETED", {
+            "deployment_status": "healthy" if passed else (rollback_tag or ("pending" if not give_up else "failed")),
+        })
         logger.node_complete("cicd_val")
         return {
             "runtime": {
                 "stage_status": new_status,
                 "stage_feedback": {STAGE: detail},
                 "deployment_status": (state["runtime"].get("deployment_status", "") + health_report),
+                "test_results": {"cicd_deployment_metadata": deployment_metadata},
                 "current_stage": "cicd_val",
                 "completed_nodes": ["cicd_val", "deployment"] if passed else [],
                 "failed_nodes": ["cicd_val"] if give_up else [],
-                "logs": [f"CICD_VAL: {'passed' if passed else 'failed'}"]
+                "logs": [f"CICD_VAL: {'passed' if passed else 'failed'}" + (f" ({rollback_tag})" if rollback_tag else "")]
             }
         }

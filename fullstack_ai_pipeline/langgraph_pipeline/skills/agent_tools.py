@@ -82,6 +82,27 @@ def touched_since(root: Path, since_ts: float) -> bool:
               if p.is_file() and not any(part in _EXCLUDED_DIRS for part in p.parts))
 
 
+def files_touched_since(root: Path, since_ts: float) -> list[str]:
+    """
+    Same signal as touched_since(), but returns the actual list of
+    root-relative paths instead of a bare bool - used by the incremental
+    tool-calling generation path (skills/incremental_codegen.py), which
+    writes files directly via real write_file/delete_file tool calls
+    rather than a single parsed batch response, so there's no
+    write_batch_files()-returned "written" list to report from. This gives
+    capabilities/backend.py etc. the same "which files did this round
+    touch" signal for task-status self-reporting regardless of which
+    generation mode actually ran.
+    """
+    if not root.exists():
+        return []
+    return sorted(
+        str(p.relative_to(root.parent)).replace("\\", "/")
+        for p in root.rglob("*")
+        if p.is_file() and not any(part in _EXCLUDED_DIRS for part in p.parts) and p.stat().st_mtime >= since_ts
+    )
+
+
 def _resolve_scoped_path(project_dir: Path, relative_path: str) -> Path:
     """Resolve a path an agent gave us, refusing anything that escapes project_dir."""
     project_dir = project_dir.resolve()
@@ -119,7 +140,8 @@ def _resolve_scoped_path(project_dir: Path, relative_path: str) -> Path:
 
 
 def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: bool = False,
-                     include_static_checks: bool = False, include_write: bool = True) -> list:
+                     include_static_checks: bool = False, include_write: bool = True,
+                     include_search: bool = False) -> list:
     """
     Build the tool set for one agent.
 
@@ -137,70 +159,104 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
                  what backend/frontend wrote, not silently rewrite it; if
                  they find a problem they report it back so the supervisor
                  can route to the agent that actually owns that code.
+    include_search: whether this agent gets search_files - a plain-text/
+                 regex grep across the project (see skills/
+                 incremental_codegen.py). Deliberately ONE generic tool,
+                 not five stack-specific ones (find_route/find_component/
+                 etc.) - a universal grep works identically regardless of
+                 language/framework, matching the "don't hardcode to one
+                 tech stack" requirement, and list_files() already gives
+                 an agent the full path tree in one call (often enough on
+                 its own when names are descriptive) - this is only for
+                 the remaining case of "which file actually defines X"
+                 when the name alone doesn't say.
     """
     project_dir = Path(project_dir).resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
+    # Best-effort stage label for file_changed() events - derived from
+    # write_prefix (e.g. "backend/" -> "backend") since a tool set is always
+    # built scoped to one stage's own directory. Empty for read-only agents
+    # (testing/deployment), which never call write_file/delete_file anyway.
+    _stage_label = write_prefix.rstrip("/") if write_prefix else ""
 
     @tool
     def read_file(path: str) -> str:
         """Read a file's contents. path is relative to the project root (e.g. 'backend/main.py')."""
         logger = get_logger()
-        logger.tool_call("read_file", path)
+        tcid = logger.tool_call("read_file", path)
         try:
             full_path = _resolve_scoped_path(project_dir, path)
         except ValueError as e:
-            logger.tool_result("read_file", f"ERROR: {e}")
+            logger.tool_result("read_file", f"ERROR: {e}", tcid)
             return f"ERROR: {e}"
         if not full_path.exists() or not full_path.is_file():
-            logger.tool_result("read_file", f"not found: {path}")
+            logger.tool_result("read_file", f"not found: {path}", tcid)
             return f"ERROR: file not found: {path}"
         try:
             content = full_path.read_text(encoding="utf-8")
-            logger.tool_result("read_file", f"{len(content)} chars")
+            logger.file_read(_stage_label, path, len(content.encode("utf-8")))
+            logger.tool_result("read_file", f"{len(content)} chars", tcid)
             return content
         except Exception as e:
-            logger.tool_result("read_file", f"ERROR: {e}")
+            logger.tool_result("read_file", f"ERROR: {e}", tcid)
             return f"ERROR reading {path}: {e}"
 
     @tool
     def list_files(subdirectory: str = ".") -> str:
         """List files under a subdirectory of the project root (default: the whole project)."""
         logger = get_logger()
-        logger.tool_call("list_files", subdirectory)
+        tcid = logger.tool_call("list_files", subdirectory)
         try:
             full_path = _resolve_scoped_path(project_dir, subdirectory)
         except ValueError as e:
-            logger.tool_result("list_files", f"ERROR: {e}")
+            logger.tool_result("list_files", f"ERROR: {e}", tcid)
             return f"ERROR: {e}"
         if not full_path.exists():
-            logger.tool_result("list_files", "(nothing here yet)")
+            logger.tool_result("list_files", "(nothing here yet)", tcid)
             return f"(nothing here yet - {subdirectory} doesn't exist)"
         files = sorted(
             str(p.relative_to(project_dir)).replace("\\", "/")
             for p in full_path.rglob("*")
             if p.is_file() and not any(part in _EXCLUDED_DIRS for part in p.parts) and not p.name.startswith(".")
         )
-        logger.tool_result("list_files", f"{len(files)} file(s)")
+        logger.tool_result("list_files", f"{len(files)} file(s)", tcid)
         return "\n".join(files) if files else "(no files)"
 
     @tool
     def write_file(path: str, content: str) -> str:
         """Write a file's full contents. path is relative to the project root (e.g. 'backend/main.py')."""
         logger = get_logger()
-        logger.tool_call("write_file", f"{path}, {len(content)} chars")
+        tcid = logger.tool_call("write_file", f"{path}, {len(content)} chars")
         normalized = path.replace("\\", "/").lstrip("./")
         if write_prefix and not normalized.startswith(write_prefix):
             result = f"ERROR: this agent may only write under '{write_prefix}' - refused '{path}'"
-            logger.tool_result("write_file", result)
+            logger.tool_result("write_file", result, tcid)
             return result
         try:
             full_path = _resolve_scoped_path(project_dir, path)
         except ValueError as e:
-            logger.tool_result("write_file", f"ERROR: {e}")
+            logger.tool_result("write_file", f"ERROR: {e}", tcid)
             return f"ERROR: {e}"
+
+        existed = full_path.exists() and full_path.is_file()
+        prior_content = None
+        if existed:
+            try:
+                prior_content = full_path.read_text(encoding="utf-8")
+            except Exception:
+                prior_content = None  # unreadable/binary - treat as a real change below
+
+        if existed and prior_content == content:
+            logger.file_changed(_stage_label, path, "SKIPPED", size_before=len(prior_content), size_after=len(content))
+            logger.tool_result("write_file", f"unchanged - skipped {path}", tcid)
+            return f"OK: {path} already matches this content - no write needed"
+
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
-        logger.tool_result("write_file", f"OK - wrote {path}")
+        logger.file_changed(_stage_label, path, "MODIFIED" if existed else "CREATED",
+                            size_before=len(prior_content) if prior_content is not None else None,
+                            size_after=len(content))
+        logger.tool_result("write_file", f"OK - wrote {path}", tcid)
         return f"OK: wrote {len(content)} chars to {path}"
 
     @tool
@@ -214,20 +270,21 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
         exists when it doesn't).
         """
         logger = get_logger()
-        logger.tool_call("delete_file", path)
+        tcid = logger.tool_call("delete_file", path)
         normalized = path.replace("\\", "/").lstrip("./")
         if write_prefix and not normalized.startswith(write_prefix):
             result = f"ERROR: this agent may only delete under '{write_prefix}' - refused '{path}'"
-            logger.tool_result("delete_file", result)
+            logger.tool_result("delete_file", result, tcid)
             return result
         try:
             full_path = _resolve_scoped_path(project_dir, path)
         except ValueError as e:
-            logger.tool_result("delete_file", f"ERROR: {e}")
+            logger.tool_result("delete_file", f"ERROR: {e}", tcid)
             return f"ERROR: {e}"
         if not full_path.exists() or not full_path.is_file():
-            logger.tool_result("delete_file", f"not found: {path}")
+            logger.tool_result("delete_file", f"not found: {path}", tcid)
             return f"ERROR: file not found: {path}"
+        size_before = full_path.stat().st_size
         full_path.unlink()
         # Prune now-empty parent directories back up to (not including)
         # project_dir, so removing the last file of an old subtree doesn't
@@ -236,10 +293,64 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
         while parent != project_dir and parent.exists() and not any(parent.iterdir()):
             parent.rmdir()
             parent = parent.parent
-        logger.tool_result("delete_file", f"OK - deleted {path}")
+        logger.file_changed(_stage_label, path, "DELETED", size_before=size_before)
+        logger.tool_result("delete_file", f"OK - deleted {path}", tcid)
         return f"OK: deleted {path}"
 
     tools = [read_file, list_files]
+
+    if include_search:
+        @tool
+        def search_files(query: str, subdirectory: str = ".") -> str:
+            """
+            Search for a literal string or regex pattern across every
+            source file under subdirectory (default: the whole project) -
+            use this to find which file actually defines/uses something
+            (e.g. "ReportsRouter", "def get_reports", "sidebar") when
+            list_files()'s path names alone don't make it obvious. Returns
+            up to 30 matches as "path:line: matched line text". Prefer
+            this over read_file-ing files speculatively one by one when
+            you're not sure which file has what you need.
+            """
+            logger = get_logger()
+            tcid = logger.tool_call("search_files", query[:60])
+            try:
+                full_path = _resolve_scoped_path(project_dir, subdirectory)
+            except ValueError as e:
+                logger.tool_result("search_files", f"ERROR: {e}", tcid)
+                return f"ERROR: {e}"
+            if not full_path.exists():
+                logger.tool_result("search_files", "(nothing here yet)", tcid)
+                return f"(nothing here yet - {subdirectory} doesn't exist)"
+
+            try:
+                pattern = re.compile(query)
+            except re.error:
+                pattern = re.compile(re.escape(query))
+
+            matches = []
+            for p in sorted(full_path.rglob("*")):
+                if not p.is_file() or any(part in _EXCLUDED_DIRS for part in p.parts) or p.name.startswith("."):
+                    continue
+                try:
+                    text = p.read_text(encoding="utf-8")
+                except (UnicodeDecodeError, OSError):
+                    continue
+                rel = str(p.relative_to(project_dir)).replace("\\", "/")
+                for i, line in enumerate(text.splitlines(), start=1):
+                    if pattern.search(line):
+                        matches.append(f"{rel}:{i}: {line.strip()[:200]}")
+                        if len(matches) >= 30:
+                            break
+                if len(matches) >= 30:
+                    break
+
+            result = "\n".join(matches) if matches else f"No matches for '{query}'"
+            logger.tool_result("search_files", f"{len(matches)} match(es)", tcid)
+            return result
+
+        tools.append(search_files)
+
     if include_write:
         tools.append(write_file)
         tools.append(delete_file)
@@ -255,7 +366,7 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
             JS/TS files get a bracket-balance sanity check. Returns a summary.
             """
             logger = get_logger()
-            logger.tool_call("run_static_checks")
+            tcid = logger.tool_call("run_static_checks")
             from skills.project_registry import sync_workspace_from_disk
             from skills.quality_skills import run_tests_skill
 
@@ -264,13 +375,13 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
 
             if not results["failures"]:
                 summary = f"{results['passed']}/{results['total']} files passed static checks. No issues found."
-                logger.tool_result("run_static_checks", summary)
+                logger.tool_result("run_static_checks", summary, tcid)
                 return summary
 
             lines = [f"{results['passed']}/{results['total']} passed, {results['failed']} failed:"]
             for f in results["failures"]:
                 lines.append(f"  {f['file']}: {f['error']}")
-            logger.tool_result("run_static_checks", f"{results['failed']} failure(s) found")
+            logger.tool_result("run_static_checks", f"{results['failed']} failure(s) found", tcid)
             return "\n".join(lines)
 
         tools.append(run_static_checks)
@@ -297,7 +408,7 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
             tasks_summary = tasks_summary or ""
 
             logger = get_logger()
-            logger.tool_call("review_code", tasks_summary[:60])
+            tcid = logger.tool_call("review_code", tasks_summary[:60])
             from skills.project_registry import sync_workspace_from_disk
             from skills.quality_skills import review_code_skill
             from skills.review_cache import (
@@ -311,7 +422,7 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
                     all_files[f"{artifact_type}/{path}"] = content
 
             if not all_files:
-                logger.tool_result("review_code", "no files to review yet")
+                logger.tool_result("review_code", "no files to review yet", tcid)
                 return "No files to review yet."
 
             cache = load_review_cache(project_dir)
@@ -334,14 +445,14 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
             note = f"({len(changed_files)} file(s) re-reviewed, {skipped} unchanged/cached)"
 
             if not all_issues:
-                logger.tool_result("review_code", f"no issues found {note}")
+                logger.tool_result("review_code", f"no issues found {note}", tcid)
                 return f"LLM review found no issues. {note}"
 
             lines = [f"LLM review found {len(all_issues)} issue(s) {note}:"]
             for issue in all_issues:
                 lines.append(f"  [{issue.get('severity', '?')}] {issue.get('file', '?')}: "
                             f"{issue.get('description', '')}")
-            logger.tool_result("review_code", f"{len(all_issues)} issue(s) found {note}")
+            logger.tool_result("review_code", f"{len(all_issues)} issue(s) found {note}", tcid)
             return "\n".join(lines)
 
         tools.append(review_code)
@@ -356,19 +467,20 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
             anything else is refused. Returns exit code + stdout/stderr (truncated).
             """
             logger = get_logger()
-            logger.tool_call("run_command", command)
+            tcid = logger.tool_call("run_command", command)
 
             stripped = command.strip()
             if not any(stripped.startswith(p) for p in ALLOWED_COMMAND_PREFIXES):
                 result = (f"REFUSED: '{command}' is not an allowlisted command. "
                          f"Allowed prefixes: {', '.join(ALLOWED_COMMAND_PREFIXES)}")
-                logger.tool_result("run_command", result)
+                logger.tool_result("run_command", result, tcid)
                 return result
             if any(bad in stripped for bad in FORBIDDEN_CHARS):
                 result = "REFUSED: command contains disallowed characters (no chaining/redirection)"
-                logger.tool_result("run_command", result)
+                logger.tool_result("run_command", result, tcid)
                 return result
 
+            is_docker = stripped.startswith("docker")
             try:
                 proc_result = subprocess.run(
                     stripped,
@@ -381,13 +493,20 @@ def make_agent_tools(project_dir: Path, write_prefix: str = "", allow_commands: 
                     timeout=180,
                 )
             except subprocess.TimeoutExpired:
-                logger.tool_result("run_command", "ERROR: timed out after 180s")
+                logger.tool_result("run_command", "ERROR: timed out after 180s", tcid)
+                if is_docker:
+                    logger.deployment("docker_command", "FAILED", {"command": stripped, "error_type": "TIMEOUT"})
                 return "ERROR: command timed out after 180s"
             except OSError as e:
-                logger.tool_result("run_command", f"ERROR: {e}")
+                logger.tool_result("run_command", f"ERROR: {e}", tcid)
+                if is_docker:
+                    logger.deployment("docker_command", "FAILED", {"command": stripped, "error_type": "DOCKER_ERROR"})
                 return f"ERROR: failed to run command: {e}"
 
-            logger.tool_result("run_command", f"exit code {proc_result.returncode}")
+            logger.tool_result("run_command", f"exit code {proc_result.returncode}", tcid)
+            if is_docker:
+                logger.deployment("docker_command", "COMPLETED" if proc_result.returncode == 0 else "FAILED",
+                                  {"command": stripped, "exit_code": proc_result.returncode})
             return (f"exit code: {proc_result.returncode}\n"
                     f"stdout:\n{proc_result.stdout[-3000:]}\n"
                     f"stderr:\n{proc_result.stderr[-1500:]}")

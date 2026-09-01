@@ -61,7 +61,6 @@ def load_dotenv():
     # Report what was loaded - every credential the model router can actually
     # use (see core/model_config.py CREDENTIAL_POOL), not a fixed A1/A2 pair,
     # so adding a 3rd/4th account here just works without touching this file.
-    # The local Ollama entry has no api_key_env (needs no key) - skip it here.
     from core.model_config import CREDENTIAL_POOL
     keys_to_check = [c["api_key_env"] for c in CREDENTIAL_POOL if c.get("api_key_env")] + ["ANTHROPIC_API_KEY"]
     
@@ -90,29 +89,27 @@ def load_dotenv():
             print(f"   {key}")
     
     print("")
-    
-    has_local_ollama = any(c["provider"] == "ollama" for c in CREDENTIAL_POOL)
-    if has_local_ollama:
-        print("✅ Local Ollama configured as primary (no API key needed - assumes the server is running)")
 
-    # Check minimum requirements - how many CLOUD accounts have BOTH a Groq
-    # and a Mistral key set (a "fully configured" account). Local Ollama
-    # needs no key, so it's reported separately above, not counted here.
-    cloud_credentials = [c for c in CREDENTIAL_POOL if c.get("api_key_env")]
+    # Check minimum requirements - how many accounts have BOTH a Groq and a
+    # Mistral key set (a "fully configured" account).
+    has_azure = bool(os.getenv("AZURE_OPENAI_API_KEY"))  # primary for every skill - sufficient on its own
+    fallback_credentials = [c for c in CREDENTIAL_POOL if c.get("api_key_env") and c["provider"] != "azure_openai"]
     configured_by_account = {}
-    for c in cloud_credentials:
+    for c in fallback_credentials:
         if os.getenv(c["api_key_env"]):
             configured_by_account.setdefault(c["account"], set()).add(c["provider"])
     full_accounts = [a for a, providers in configured_by_account.items()
                      if {"groq", "mistral"} <= providers]
-    total_accounts = len({c["account"] for c in cloud_credentials})
+    total_accounts = len({c["account"] for c in fallback_credentials})
     has_any_groq = any("groq" in providers for providers in configured_by_account.values())
     has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
 
-    if len(full_accounts) == total_accounts:
-        print(f"✅ FULL SETUP: All {total_accounts} cloud accounts configured (as fallback)!")
+    if has_azure:
+        print("✅ Azure (gpt-5.4-mini) configured as primary for every skill/agent")
+    if len(full_accounts) == total_accounts and total_accounts:
+        print(f"✅ FULL SETUP: All {total_accounts} Mistral+Groq account(s) configured (as fallback)!")
     elif full_accounts:
-        print(f"✅ PARTIAL SETUP: {len(full_accounts)}/{total_accounts} cloud account(s) fully configured "
+        print(f"✅ PARTIAL SETUP: {len(full_accounts)}/{total_accounts} account(s) fully configured "
               f"(Groq + Mistral) - fallback chains just have fewer hops to walk through.")
     elif has_any_groq:
         print("✅ GROQ SETUP: Can use Groq models")
@@ -120,11 +117,11 @@ def load_dotenv():
     elif has_anthropic:
         print("✅ ANTHROPIC SETUP: Can use Claude as fallback")
         print("   (add an 'anthropic' CREDENTIAL_POOL entry in core/model_config.py to route to it)")
-    elif not has_local_ollama:
+    elif not has_azure:
         print("❌ NO SETUP: No API keys found!")
-        print("   Set at least GROQ_API_KEY or ANTHROPIC_API_KEY")
+        print("   Set at least AZURE_OPENAI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY, or ANTHROPIC_API_KEY")
         return False
-    
+
     return True
 
 

@@ -1,22 +1,33 @@
 """
 End-to-End Testing Agent - E2E_RUN / E2E_UT / E2E_VAL as three real
 LangGraph nodes (see core/graph.py for the edges), matching the documented
-architecture diagram. Replaces the old capabilities/testing.py (renamed -
-same underlying checks, split into 3 nodes instead of one).
+architecture diagram.
 
-E2E_RUN does the actual verification work (static checks, LLM code review,
-and - the diagram's "boots full stack together" - a real `docker compose up`
-+ reachability check). E2E_UT/E2E_VAL are deliberately thin: they just read
-what RUN already computed and decide pass/fail/retry, matching the diagram's
-separate diamonds without re-running expensive checks twice.
+REDESIGNED as a System Integration Validator (not a fourth copy of
+Database/Backend/Frontend's own checks): DB_UT/VAL, BE_UT/VAL, and FE_UT/VAL
+now each do real, deterministic, per-stage validation before anything ever
+reaches here (real Postgres apply, real Docker boot+HTTP, real vite
+build+ESLint+madge+Playwright). E2E's old static-check + LLM-review tool
+calls (run_static_checks, review_code, an ad-hoc local pytest attempt) were
+confirmed strictly redundant with that work and have been removed - see
+Notes.md/session history for the before/after comparison. E2E's job is now
+"does the COMPLETE system work together", not "is each piece individually
+correct" (already proven upstream).
+
+E2E_RUN is now lightweight - it only prepares the integration environment
+(Docker assets + a real `docker compose up --build -d`) and does NOT tear
+down afterward. E2E_UT and E2E_VAL then examine that SAME still-running
+stack (unlike every other stage's self-contained boot-check-teardown-in-
+one-call validators) since "can it start" (UT) and "does it work
+correctly" (VAL) are different questions about the same live instance, not
+two separate boots. teardown_stack() is called on any UT failure (nothing
+more to check) and unconditionally at the end of VAL (pass or fail).
 """
 
 from core.state import ProjectState
-from core.stage_loop import MAX_STAGE_ATTEMPTS, checkpoint, known_issue_files_context
+from core.stage_loop import MAX_STAGE_ATTEMPTS, checkpoint
 from skills.project_registry import project_dir_for, sync_workspace_from_disk
-from skills.agent_tools import make_agent_tools
 from skills.text_utils import cap_report
-from core.agent_runtime import run_tool_agent
 from core.logger import get_logger
 
 STAGE = "testing"  # kept as the logical stage_status/review_issues key used
@@ -25,169 +36,54 @@ STAGE = "testing"  # kept as the logical stage_status/review_issues key used
                    # graph node names (e2e_run/e2e_ut/e2e_val) changed to
                    # match the diagram; the logical stage vocabulary didn't.
 
-MAX_REVIEW_REPEATS = 3  # same reasoning as the old testing.py: a review_code
-                       # finding that keeps getting re-flagged in the same
-                       # file this many times without resolving is a subjective
-                       # nitpick the model can't converge on, not a real defect.
 
-E2E_SYSTEM_PROMPT = """You are the end-to-end testing agent. You verify - you do not write or fix code
-yourself (you have no write_file tool on purpose; report problems so the supervisor can send them to
-the agent that owns that file). Minimize tool calls - call run_static_checks and review_code ONCE each,
-then read_file ONLY files that have specific errors. Don't list_files or read files without errors.
-
-The required stack for every project this pipeline builds (not a guess, not per-project) is: Postgres
-database, Python + FastAPI + SQLAlchemy backend, React + Vite frontend, API paths matching openapi.yaml
-exactly (whatever prefix it uses, or lack of one). Flag a genuine deviation from this (e.g. a different
-backend language/framework, a different ORM) as a real issue - but don't invent a "wrong framework"
-complaint against files that already match it; verify against what's actually on disk, not assumptions.
-
-You have three ways to actually verify the code - use them, don't guess:
-1. run_static_checks - parses every backend/frontend file for syntax errors, undefined names, and a
-   hardcoded-API-URL check (the frontend must read the backend's address from an env var, not a
-   hardcoded port, or the two halves of the app can't actually talk to each other). Always call this
-   first.
-2. review_code - a second LLM's opinion catching things static analysis can't (missing error
-   handling, security issues, logic bugs, requirements the code doesn't actually satisfy). Pass it
-   the required tasks summary given below so it can check for missing functionality too.
-3. run_command("pytest") - if backend/ has a requirements.txt listing pytest and a test_main.py,
-   try running it for real - only if you judge it likely to work without installing anything first
-   (don't try to pip install).
-
-Any file a PREVIOUS round's review/static-check pass already flagged is inlined directly below your
-context (if any) - do NOT read_file those again, the content shown IS current. Only read_file a file
-that's genuinely not already shown to you (e.g. one run_static_checks/review_code just flagged for the
-first time this call). run_static_checks and review_code's own output already states what's wrong -
-that description, plus what's already inlined below, is normally enough; don't re-read a file just to
-restate what the tool already told you. Respond with a clear PASS or FAIL summary listing every real
-problem found (file + description) so the supervisor and other agents know exactly what to fix - don't
-say "looks fine" without having actually run the checks.
-
-After your own report, a separate deterministic step automatically boots the full stack for real
-(docker compose up) and checks it's actually reachable - you do NOT need to attempt this yourself via
-run_command; that would just be redundant with what already happens next."""
-
-
-def _review_findings(project_dir, workspace, tasks) -> tuple:
-    """Structured, severity-tagged review_code findings, direct from the
-    skill (deterministic, cache-backed) - not parsed out of an agent's
-    free-text report. Returns (blocking_issues, low_severity_issues)."""
-    from skills.quality_skills import review_code_skill
-    from skills.review_cache import (
-        load_review_cache, save_review_cache, split_changed_files, rebuild_cache
-    )
-
-    all_files = {}
-    for artifact_type in ("backend", "frontend"):
-        for path, content in workspace.get(artifact_type, {}).get("files", {}).items():
-            all_files[f"{artifact_type}/{path}"] = content
-
-    if not all_files:
-        return [], []
-
-    cache = load_review_cache(project_dir)
-    changed_files, current_hashes, cached_issues = split_changed_files(all_files, cache)
-    new_issues_by_file = {}
-    if changed_files:
-        new_issues = review_code_skill(changed_files, tasks)
-        for issue in new_issues:
-            new_issues_by_file.setdefault(issue.get("file", ""), []).append(issue)
-    updated_cache = rebuild_cache(all_files, current_hashes, cache, set(changed_files), new_issues_by_file)
-    save_review_cache(project_dir, updated_cache)
-    review_findings = cached_issues + [i for issues in new_issues_by_file.values() for i in issues]
-
-    return (
-        [i for i in review_findings if str(i.get("severity", "medium")).lower() == "high"],
-        [i for i in review_findings if str(i.get("severity", "medium")).lower() != "high"],
-    )
+def _problems_to_review_issues(problems: list[str]) -> list[dict]:
+    """Every finding skills/e2e_validators.py produces is tagged
+    '[stage] message' - this turns that back into the SAME structured
+    Issue shape Backend/Frontend/Database already populate, with a "file"
+    value ('backend/e2e_integration' etc.) that capabilities/supervisor.py's
+    own stage-matching logic (`f"{stage}/" in issue["file"]`) can actually
+    match against. Without this, E2E finding a real integration bug had NO
+    way to tell the Supervisor WHICH agent should fix it - confirmed as a
+    real gap in this rewrite before this fix, caught by direct verification
+    rather than assumption."""
+    from skills.e2e_validators import parse_tag
+    issues = []
+    for p in problems:
+        stage, message = parse_tag(p)
+        issues.append({
+            "severity": "high", "file": f"{stage}/e2e_integration",
+            "description": message[:500],
+            "suggested_fix": "See the E2E system integration finding for details.",
+            "source": "e2e_integration",
+        })
+    return issues
 
 
 class E2ECapability:
     def run(self, state: ProjectState) -> dict:
-        """E2E_RUN: static checks + LLM code review + boots the full stack
-        together for real (docker compose up + reachability poll)."""
+        """E2E_RUN: prepares the integration environment - Docker assets +
+        a real `docker compose up --build -d`. No structural validation,
+        no LLM call - that's Database/Backend/Frontend's own job, already
+        done before this stage is ever reached."""
         logger = get_logger()
         logger.node_start("e2e_run")
         checkpoint(state)
 
         project_dir = project_dir_for(state["project"]["project_id"])
-        tools = make_agent_tools(project_dir, write_prefix="", allow_commands=True,
-                                 include_static_checks=True, include_write=False)
-        logger.info(f"Tools granted: {[t.name for t in tools]} (no write access)")
-
-        tasks = state["project"].get("tasks", [])
-
-        # Pre-sync so both the pre-built context below AND the post-agent
-        # analysis further down use the same up-to-date file content -
-        # previously this sync only happened AFTER the agent ran, so the
-        # agent had no choice but to read_file every flagged file itself
-        # every round, even ones whose content hadn't changed since the last
-        # E2E pass.
         workspace = sync_workspace_from_disk(project_dir, state["project"]["workspace"])
-        prior_issues = state["runtime"].get("review_issues", [])
-        known_files = {}
-        for issue in prior_issues:
-            f = issue.get("file", "")
-            if "/" not in f:
-                continue
-            artifact, rel_path = f.split("/", 1)
-            content = workspace.get(artifact, {}).get("files", {}).get(rel_path)
-            if content is not None:
-                known_files[f] = content
-        files_context = known_issue_files_context(known_files)
 
-        context = f"""Verify the backend and frontend that have been built so far.
-
-Required tasks (pass this to review_code): {tasks}{files_context}"""
-
-        attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0) + 1
-        logger.info(f"E2E_RUN attempt {attempts}/{MAX_STAGE_ATTEMPTS}")
-
-        summary, ok = run_tool_agent("testing_agent", E2E_SYSTEM_PROMPT, context, tools)
-        logger.info(f"E2E agent report: {summary[:300]}")
-
-        from skills.quality_skills import run_tests_skill
-        workspace = sync_workspace_from_disk(project_dir, workspace)
-        test_results = run_tests_skill(workspace)
-        logger.info(f"Static checks: {test_results['passed']}/{test_results['total']} passed, "
-                   f"{test_results['failed']} failed")
-
-        candidate_review_issues, low_severity_issues = _review_findings(project_dir, workspace, tasks)
-
-        # Recurrence check: a review_code finding re-flagged in the same
-        # file/severity across MAX_REVIEW_REPEATS E2E passes this run,
-        # despite Backend/Frontend already getting that many self-heal shots
-        # at it, stops blocking - it's a sign the model can't converge on a
-        # subjective nitpick, not that the pipeline is broken.
-        history = state["runtime"].get("issue_history", [])
-        repeat_counts = {}
-        for past_issue in history:
-            if past_issue.get("source") != "review_code":
-                continue
-            key = (past_issue.get("file"), str(past_issue.get("severity", "medium")).lower())
-            repeat_counts[key] = repeat_counts.get(key, 0) + 1
-
-        blocking_review_issues = []
-        for issue in candidate_review_issues:
-            key = (issue.get("file"), str(issue.get("severity", "medium")).lower())
-            if repeat_counts.get(key, 0) >= MAX_REVIEW_REPEATS:
-                logger.info(f"review_code issue in {issue.get('file')} ({issue.get('severity')}) has recurred "
-                           f"{repeat_counts[key]}+ times this run without resolving - no longer blocking")
-                low_severity_issues.append(issue)
-            else:
-                blocking_review_issues.append({**issue, "source": "review_code"})
-
-        static_clean = test_results["failed"] == 0
-        no_blocking_review = not blocking_review_issues
-
-        # Boots the full stack for real (only if static+review already look
-        # clean - no point booting a stack we already know is broken).
-        e2e_boot = None
-        e2e_report = ""
         plan = state["runtime"]["execution_plan"]
         has_backend = bool(workspace.get("backend", {}).get("files"))
         has_frontend = bool(workspace.get("frontend", {}).get("files"))
-        if ok and static_clean and no_blocking_review and (plan.get("backend") or plan.get("frontend")) \
-                and (has_backend or has_frontend):
+        has_database = bool(workspace.get("database", {}).get("schema"))
+
+        attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0) + 1
+        logger.info(f"E2E_RUN attempt {attempts}/{MAX_STAGE_ATTEMPTS}")
+        logger.stage_started(STAGE, attempts)
+
+        e2e_boot = None
+        if (plan.get("backend") or plan.get("frontend")) and (has_backend or has_frontend):
             import shutil
             import subprocess as _subprocess
 
@@ -205,135 +101,231 @@ Required tasks (pass this to review_code): {tasks}{files_context}"""
             if docker_available:
                 from skills.docker_skills import write_docker_assets
                 from skills.project_registry import allocate_ports
-                from skills.e2e_skills import run_e2e_skill
+                from skills.e2e_skills import boot_stack
 
-                logger.info("Generating Docker assets for E2E boot check...")
+                import time as _time
+
+                logger.info("Preparing Docker assets for system integration testing...")
                 write_docker_assets(project_dir, workspace)
                 host_ports = allocate_ports(state["project"]["project_id"])
-                logger.info("Booting full stack for E2E verification (docker compose up --build -d)...")
-                e2e_boot = run_e2e_skill(project_dir, host_ports, has_backend, has_frontend)
-
-                check_lines = "\n".join(
-                    f"- {c['name']}: {'OK' if c['ok'] else 'FAIL'} ({c['detail']})" for c in e2e_boot["checks"]
-                )
-                e2e_report = f"\n\nE2E boot check: {'PASS' if e2e_boot['passed'] else 'FAIL'}\n{check_lines}"
-                logger.success("E2E check: stack booted and reachable") if e2e_boot["passed"] \
-                    else logger.warning(f"E2E check FAILED:\n{check_lines}")
+                logger.info("Booting complete stack (docker compose up --build -d)...")
+                boot_started_at = _time.time()
+                e2e_boot = boot_stack(project_dir, host_ports, has_backend, has_frontend)
+                e2e_boot["boot_elapsed_s"] = _time.time() - boot_started_at
+                e2e_boot["host_ports"] = host_ports
+                e2e_boot["has_backend"] = has_backend
+                e2e_boot["has_frontend"] = has_frontend
+                e2e_boot["has_database"] = has_database
+                logger.success("Stack booted - staying up for E2E_UT/E2E_VAL to examine") if e2e_boot["up_ok"] \
+                    else logger.warning(f"Stack failed to boot: {e2e_boot['up_detail']}")
             else:
-                e2e_report = "\n\nE2E boot check: skipped (Docker not available)"
-                logger.info("Docker not available - skipping E2E boot check")
-
-        summary += e2e_report
-        capped_summary = cap_report(summary)
-
-        prior_failures = state["runtime"].get("consecutive_agent_failures", 0)
-        consecutive_failures = 0 if ok else prior_failures + 1
-
-        issues = [
-            {"severity": "high", "file": f["file"], "description": f["error"],
-             "suggested_fix": "Fix the reported error.", "source": "static_check"}
-            for f in test_results.get("failures", [])
-        ] + blocking_review_issues
+                logger.info("Docker not available - skipping integration boot")
 
         logger.node_complete("e2e_run")
         return {
             "project": {"workspace": workspace},
             "runtime": {
                 "stage_status": {"testing": "validating"},
-                "test_results": {**test_results, "e2e_boot": e2e_boot, "ok": ok},
-                "review_issues": issues,
-                "issue_history": issues,
-                "testing_report": capped_summary,
+                "test_results": {"e2e_boot": e2e_boot},
                 "stage_attempts": {STAGE: attempts},
                 "current_stage": "e2e_run",
                 "completed_nodes": ["e2e_run"],
-                "consecutive_agent_failures": consecutive_failures,
-                "logs": [f"E2E Agent: {summary[:300]}"]
+                "logs": [f"E2E_RUN: boot {'OK' if e2e_boot and e2e_boot['up_ok'] else 'skipped/failed'}"]
             }
         }
 
     def check_ut(self, state: ProjectState) -> dict:
-        """E2E_UT: stack starts clean? Static checks passed, and (if a boot
-        was attempted) docker compose up itself succeeded."""
+        """E2E_UT: can the COMPLETE application stack start successfully?
+        Fully deterministic - containers running, backend/frontend
+        reachable, no crash loops, no fatal exceptions in logs. Tears the
+        stack down on failure (nothing more to check); leaves it running
+        on success for E2E_VAL to examine."""
         logger = get_logger()
         logger.node_start("e2e_ut")
         checkpoint(state)
 
-        test_results = state["runtime"].get("test_results", {})
-        static_clean = test_results.get("failed", 1) == 0 and test_results.get("ok", False)
+        project_dir = project_dir_for(state["project"]["project_id"])
+        e2e_boot = state["runtime"].get("test_results", {}).get("e2e_boot")
 
-        e2e_boot = test_results.get("e2e_boot")
-        boot_clean = True
-        if e2e_boot is not None:
-            up_check = next((c for c in e2e_boot["checks"] if c["name"] == "docker compose up"), None)
-            boot_clean = up_check["ok"] if up_check else False
+        if e2e_boot is None:
+            # No backend/frontend to boot at all, or Docker unavailable -
+            # nothing for this stage to verify; not a failure.
+            passed, problems = True, []
+        else:
+            from skills.e2e_validators import run_e2e_ut_validators
+            problems = run_e2e_ut_validators(project_dir, e2e_boot)
+            passed = not problems
 
-        passed = static_clean and boot_clean
+        if not passed and e2e_boot is not None:
+            from skills.e2e_skills import teardown_stack
+            teardown_stack(project_dir)
+
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0)
         if passed:
-            logger.success("E2E_UT passed: stack starts clean")
+            logger.success("E2E_UT passed: complete stack starts successfully")
         else:
-            logger.warning(f"E2E_UT failed (attempt {attempts}/{MAX_STAGE_ATTEMPTS}): "
-                          f"static_clean={static_clean}, boot_clean={boot_clean}")
+            logger.warning(f"E2E_UT failed (attempt {attempts}/{MAX_STAGE_ATTEMPTS}): {len(problems)} problem(s)")
+            for p in problems[:3]:
+                logger.info(f"   - {p[:200]}")
 
         give_up = not passed and attempts >= MAX_STAGE_ATTEMPTS
-        detail = "" if passed else f"stack did not start clean (static_clean={static_clean}, boot_clean={boot_clean})"
         logger.node_complete("e2e_ut")
         return {
             "runtime": {
                 "stage_status": {"testing": "failed"} if give_up else {},
-                "stage_feedback": {STAGE: detail},
+                "stage_feedback": {STAGE: "" if passed else "\n".join(f"- {p}" for p in problems)},
                 "quality_passed": False if give_up else None,
+                # So the Supervisor (and Backend/Frontend's own RUN prompts,
+                # which read testing_report directly) actually learn WHAT
+                # broke and WHICH stage to route to - see
+                # _problems_to_review_issues' docstring for why this wasn't
+                # here before.
+                "review_issues": _problems_to_review_issues(problems),
+                "testing_report": "" if passed else cap_report(
+                    "E2E_UT (can the complete stack start?) failed:\n" + "\n".join(f"- {p}" for p in problems)
+                ),
                 "current_stage": "e2e_ut",
                 "failed_nodes": ["e2e_ut"] if give_up else [],
-                "logs": [f"E2E_UT: {'passed' if passed else 'failed'}"]
+                "logs": [f"E2E_UT: {'passed' if passed else f'{len(problems)} problem(s)'}"]
             }
         }
 
     def check_val(self, state: ProjectState) -> dict:
-        """E2E_VAL: real user flows pass? Backend/frontend actually
-        reachable over HTTP, and no blocking review_code issues left."""
+        """E2E_VAL: does the COMPLETE system work correctly as one
+        integrated whole? Runs the deterministic integration/security/
+        performance validators (Phase 2) against the SAME still-live
+        stack E2E_UT just proved boots cleanly, then tears it down
+        unconditionally (pass or fail - this is a temporary verification
+        boot, not the real deployment). Phases 3-4 add the Acceptance
+        Test Runner and the one holistic LLM review here."""
         logger = get_logger()
         logger.node_start("e2e_val")
         checkpoint(state)
 
-        test_results = state["runtime"].get("test_results", {})
-        e2e_boot = test_results.get("e2e_boot")
-        reachable = True
+        project_dir = project_dir_for(state["project"]["project_id"])
+        project_id = state["project"]["project_id"]
+        workspace = sync_workspace_from_disk(project_dir, state["project"]["workspace"])
+        e2e_boot = state["runtime"].get("test_results", {}).get("e2e_boot")
+
+        # Defaults to the PREVIOUS round's stored outcomes, not {} - if the
+        # acceptance suite is skipped this round (e.g. Phase 2 already
+        # failed, so it never got the chance to run), the regression
+        # baseline for the NEXT round must not be wiped out by an empty
+        # result that doesn't mean "everything failed", it means "never ran".
+        current_outcomes = state["runtime"].get("test_results", {}).get("e2e_acceptance_outcomes", {})
         if e2e_boot is not None:
-            reachable = all(
-                c["ok"] for c in e2e_boot["checks"] if c["name"] in ("backend reachable", "frontend reachable")
+            from skills.e2e_validators import run_e2e_val_validators
+            problems = run_e2e_val_validators(project_dir, project_id, workspace, e2e_boot)
+
+            # Acceptance Test Runner (Phase 3) - gated behind the cheaper
+            # Phase 2 validators already passing, same cost-gating already
+            # used for the Docker-based validators elsewhere (no point
+            # running a full Playwright user-flow suite against a system
+            # already known to be broken by checks that are free). Per the
+            # spec: this only EXECUTES Frontend's already-generated suite,
+            # never generates one itself.
+            if not problems and e2e_boot.get("has_frontend"):
+                spec_path = project_dir / "test_frontend.spec.cjs"
+                if spec_path.exists():
+                    from skills.e2e_validators import run_acceptance_suite, AcceptanceRegressionValidator
+                    frontend_url = f"http://localhost:{e2e_boot['host_ports']['frontend']}/"
+                    previous_outcomes = current_outcomes
+                    suite_problems, current_outcomes = run_acceptance_suite(
+                        project_dir, spec_path.read_text(encoding="utf-8"), frontend_url,
+                    )
+                    logger.validator_result(STAGE, "val", "AcceptanceSuite",
+                                           "FAIL" if suite_problems else "PASS", issue_count=len(suite_problems))
+                    problems += suite_problems
+                    regression_problems = AcceptanceRegressionValidator().validate(previous_outcomes, current_outcomes)
+                    logger.validator_result(STAGE, "val", "AcceptanceRegressionValidator",
+                                           "FAIL" if regression_problems else "PASS", issue_count=len(regression_problems))
+                    problems += regression_problems
+        else:
+            problems = []
+
+        if e2e_boot is not None:
+            from skills.e2e_skills import teardown_stack
+            teardown_stack(project_dir)
+
+        # Holistic LLM Review (Phase 4) - the ONE subjective step, gated
+        # behind every deterministic check above already passing (no point
+        # spending a model call scrutinizing an app already known broken).
+        # Verification only - review_holistic_review is never given a
+        # write tool, so it structurally cannot modify code.
+        holistic_findings = []
+        if not problems:
+            from skills.e2e_validators import run_holistic_review
+            blocking, holistic_findings = run_holistic_review(
+                project_dir, workspace,
+                state["project"].get("architecture", ""),
+                state["project"].get("tasks", []),
+                state["project"].get("acceptance_criteria", []),
+                state["runtime"].get("issue_history", []),
             )
+            # NOT run through the "[stage] message" tag convention - these
+            # already carry their own REAL file path from review_code_skill
+            # (e.g. "backend/main.py"), which review_issues below uses
+            # directly instead of parse_tag (parse_tag's `\[(\w+)\]` regex
+            # wouldn't match "[holistic review]" anyway - a space isn't a
+            # word character - confirmed before choosing this formatting).
+            logger.validator_result(STAGE, "val", "HolisticReview", "FAIL" if blocking else "PASS",
+                                   issue_count=len(blocking))
+            problems += [f"(holistic review) {i.get('file', '?')}: {i.get('description', '')}" for i in blocking]
 
-        review_issues = state["runtime"].get("review_issues", [])
-        no_blocking_review = not any(i.get("source") == "review_code" for i in review_issues)
-        # Static-check-sourced issues (real syntax/undefined-name/etc bugs)
-        # must also block VAL - only review_code's subjective findings get
-        # the leniency above.
-        no_static_failures = not any(i.get("source") == "static_check" for i in review_issues)
-
-        passed = reachable and no_blocking_review and no_static_failures
+        passed = not problems
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0)
         if passed:
-            logger.success("E2E_VAL passed: real user flows pass")
+            logger.success("E2E_VAL passed: system integration checks clean")
         else:
-            logger.warning(f"E2E_VAL failed (attempt {attempts}/{MAX_STAGE_ATTEMPTS}): "
-                          f"reachable={reachable}, outstanding_issues={len(review_issues)}")
+            logger.warning(f"E2E_VAL failed (attempt {attempts}/{MAX_STAGE_ATTEMPTS}): {len(problems)} problem(s)")
+            for p in problems[:3]:
+                logger.info(f"   - {p[:200]}")
 
         give_up = not passed and attempts >= MAX_STAGE_ATTEMPTS
         new_status = {"testing": "done"} if passed else ({"testing": "failed"} if give_up else {})
-        detail = "" if passed else f"not reachable/outstanding issues (reachable={reachable}, issues={len(review_issues)})"
+
+        # review_issues (the CURRENT snapshot Supervisor reads to decide
+        # which agent to route to - see _problems_to_review_issues'
+        # docstring) combines the tagged deterministic findings with the
+        # holistic review's own real per-file findings (kept separate from
+        # the generic tag-parsing path - see the "(holistic review)" note
+        # above for why).
+        holistic_issues = [
+            {"severity": str(i.get("severity", "high")), "file": i.get("file", "?"),
+             "description": i.get("description", ""), "suggested_fix": i.get("suggested_fix", ""),
+             "source": "holistic_review"}
+            for i in holistic_findings
+        ]
+        tagged_problems = [p for p in problems if not p.startswith("(holistic review)")]
 
         logger.stage("testing", "done" if passed else ("failed" if give_up else "pending"))
         logger.node_complete("e2e_val")
         return {
+            "project": {"workspace": workspace},
             "runtime": {
                 "stage_status": new_status,
-                "stage_feedback": {STAGE: detail},
+                "stage_feedback": {STAGE: "" if passed else "\n".join(f"- {p}" for p in problems)},
                 "quality_passed": passed if (passed or give_up) else None,
+                # This round's per-test acceptance outcomes - persisted so
+                # the NEXT E2E_VAL run's AcceptanceRegressionValidator can
+                # compare against it (see skills/e2e_validators.py).
+                "test_results": {"e2e_acceptance_outcomes": current_outcomes},
+                # So the Supervisor (and Backend/Frontend's own RUN prompts)
+                # actually learn WHAT broke and WHICH stage to route to.
+                "review_issues": _problems_to_review_issues(tagged_problems) + holistic_issues,
+                "testing_report": "" if passed else cap_report(
+                    "E2E_VAL (does the complete system work correctly?) failed:\n"
+                    + "\n".join(f"- {p}" for p in problems)
+                ),
+                "issue_history": [
+                    {"severity": str(i.get("severity", "high")), "file": i.get("file", "?"),
+                     "description": i.get("description", ""), "suggested_fix": i.get("suggested_fix", ""),
+                     "source": "holistic_review"}
+                    for i in holistic_findings
+                ],
                 "current_stage": "e2e_val",
                 "completed_nodes": ["e2e_val", "testing"] if passed else [],
                 "failed_nodes": ["e2e_val"] if give_up else [],
-                "logs": [f"E2E_VAL: {'passed' if passed else 'failed'}"]
+                "logs": [f"E2E_VAL: {'passed' if passed else f'{len(problems)} problem(s)'}"]
             }
         }

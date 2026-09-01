@@ -12,8 +12,12 @@ from core.state import ProjectState
 from core.stage_loop import MAX_STAGE_ATTEMPTS, checkpoint, existing_files_context
 from skills.project_registry import project_dir_for, sync_workspace_from_disk
 from skills.agent_tools import has_marker_file, touched_since
-from skills.quality_skills import run_tests_skill, check_backend_matches_contract
+from skills.quality_skills import run_tests_skill
+from skills.be_validators import run_be_ut_validators, run_be_val_validators
 from skills.batch_codegen import FILE_FORMAT_INSTRUCTIONS, run_batch_generation, parse_batch_response, write_batch_files
+from skills.planning_skills import mark_tasks_complete_skill
+from skills.acceptance_test_generator import generate_acceptance_tests_skill
+from skills.generation_strategy import decide_strategy, decide_strategy_verbose, Strategy
 from core.logger import get_logger
 
 STAGE = "backend"
@@ -138,15 +142,70 @@ class BackendCapability:
         feedback = state["runtime"].get("stage_feedback", {}).get(STAGE, "")
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0) + 1
         logger.info(f"BE_RUN attempt {attempts}/{MAX_STAGE_ATTEMPTS}")
+        logger.stage_started(STAGE, attempts)
 
         existing_backend_files = workspace.get("backend", {}).get("files", {})
-        files_context = existing_files_context(existing_backend_files, feedback, "backend/",
+
+        # Generation Strategy Engine (skills/generation_strategy.py) - a
+        # fresh project or a small/medium update stays on the proven,
+        # full-context batch path; only a genuinely large backend with a
+        # LOW cross-module-impact change switches to incremental tool-
+        # calling (skills/incremental_codegen.py). Correctness always
+        # wins ties - see that module's docstring for exactly why.
+        strategy, strategy_reason, strategy_meta = decide_strategy_verbose(
+            not existing_backend_files, existing_backend_files, state["user_request"], feedback)
+        logger.info(f"Generation strategy: {strategy.value} ({strategy_reason})")
+        logger.generation_strategy(STAGE, strategy.value, strategy_reason, strategy_meta)
+
+        backend_dir = project_dir / "backend"
+        round_started_at = time.time()
+        # Snapshot before this round's generation call so the delta after
+        # tells us exactly what THIS round cost - the Generation Strategy
+        # Comparison the observability spec asks for (batch vs incremental).
+        _llm_before = dict(logger._llm_by_agent.get("backend_agent", {}))
+
+        # BATCH and INCREMENTAL are now the SAME generation pipeline -
+        # existing_files_context() -> run_batch_generation() ->
+        # parse_batch_response() -> write_batch_files() - differing only
+        # in how many of backend/'s existing files get inlined into the
+        # one generation call. INCREMENTAL narrows that to a deterministically
+        # selected subset (skills/incremental_codegen.py); BATCH inlines
+        # everything (existing_files_context's own size-based fallback
+        # already handles "too big to fully inline" by matching feedback).
+        # A prior ReAct tool-calling implementation of INCREMENTAL was
+        # removed after being confirmed to cause quadratic token growth.
+        #
+        # Project Index kept fresh (and the structure summary built from
+        # it) regardless of strategy - the "Architecture" text below is
+        # frozen from the project's FIRST build and never reflects routes/
+        # endpoints added by later updates. Confirmed real harm from that
+        # staleness alone (not just an incremental-mode issue): a
+        # generation call relying only on stale architecture text has no
+        # way to know what currently exists, which is exactly the gap that
+        # let a routing file get silently rewritten with routes missing.
+        from skills.project_index import update_project_index, summarize_project_structure
+        project_index = update_project_index(project_dir, workspace)
+        structure_summary = summarize_project_structure(project_index)
+
+        if strategy == Strategy.INCREMENTAL:
+            from skills.incremental_codegen import select_generation_scope
+            files_for_context = select_generation_scope(
+                existing_backend_files, state["user_request"], feedback,
+                project_index=project_index, extra_text=state["user_request"],
+                path_prefix="backend/",
+            )
+        else:
+            files_for_context = existing_backend_files
+
+        files_context = existing_files_context(files_for_context, feedback, "backend/",
                                                extra_text=state["user_request"])
 
         context = f"""User request / change request: {state["user_request"]}
 
 Architecture:
-{state["project"].get("architecture", "")}
+{state["project"].get("architecture", "")}""" + (f"""
+
+{structure_summary}""" if structure_summary else "") + f"""
 
 Tasks:
 {state["project"].get("tasks", [])}
@@ -156,12 +215,7 @@ Deployment feedback (if any): {state["runtime"].get("deployment_status") or "non
 {reference_docs}{files_context}""" + (f"\n\nYour own unit-test/validation check on a PRIOR attempt this round found "
                        f"these problems - fix them:\n{feedback}" if feedback else "")
 
-        # Mark as "updating" when there's feedback (fixing issues), or "running" for first attempt
-        feedback = state["runtime"].get("stage_feedback", {}).get(STAGE, "")
-        initial_status = "updating" if feedback else "running"
-        
-        backend_dir = project_dir / "backend"
-        round_started_at = time.time()
+        logger.context_size(STAGE, strategy.value, len(files_for_context), context)
         response, ok = run_batch_generation("backend_agent", BACKEND_SYSTEM_PROMPT, context)
 
         parsed_files, deletes = parse_batch_response(response) if ok else ({}, [])
@@ -169,6 +223,33 @@ Deployment feedback (if any): {state["runtime"].get("deployment_status") or "non
         summary = (f"Wrote {len(written)} file(s): {', '.join(written) or 'none'}."
                   + (f" Deleted: {', '.join(deleted)}." if deleted else "")
                   + (f" Refused (out of scope): {', '.join(refused)}." if refused else "")) if ok else response
+
+        # Generation Strategy Comparison record (observability spec) - this
+        # round's own cost, correlating strategy with LLM calls/tokens/
+        # files/duration/result so batch vs incremental can be judged
+        # objectively across a run, not pieced together by hand afterward.
+        _llm_after = logger._llm_by_agent.get("backend_agent", {})
+        _calls_this_round = _llm_after.get("calls", 0) - _llm_before.get("calls", 0)
+        _in_tok_before, _out_tok_before = _llm_before.get("input_tokens", 0), _llm_before.get("output_tokens", 0)
+        _in_tok = _llm_after.get("input_tokens", 0) - _in_tok_before
+        _out_tok = _llm_after.get("output_tokens", 0) - _out_tok_before
+        logger.generation_round(
+            STAGE, strategy.value, _calls_this_round,
+            _in_tok if _llm_after else None, _out_tok if _llm_after else None,
+            len(files_for_context), len(written), (time.time() - round_started_at) * 1000,
+            state["runtime"].get("stage_attempts", {}).get(STAGE, 0),
+            "written" if written else ("no_op" if ok else "failed"),
+        )
+
+        # Keep the Project Index fresh regardless of which generation mode
+        # ran (batch generation never touches it mid-round the way the
+        # incremental path just did above) - cheap (only re-indexes files
+        # that actually changed, see update_project_index) and means the
+        # NEXT incremental round always has an up-to-date cache to query.
+        if ok and written:
+            from skills.project_index import update_project_index
+            fresh_workspace = sync_workspace_from_disk(project_dir, state["project"].get("workspace", {}))
+            update_project_index(project_dir, fresh_workspace)
 
         wrote_files = any(backend_dir.rglob("*")) if backend_dir.exists() else False
         has_manifest = has_marker_file(backend_dir, _BACKEND_MARKER_FILES)
@@ -223,6 +304,48 @@ Deployment feedback (if any): {state["runtime"].get("deployment_status") or "non
             }
 
         logger.info(f"Backend agent: {summary[:200]}")
+
+        # Self-report which of Planner's tasks this round's write satisfies -
+        # only when files were genuinely written this attempt (written is
+        # non-empty), matching database.py's "only ask when something
+        # actually changed" reasoning.
+        task_status_update = {}
+        if written:
+            tasks = state["project"].get("tasks", [])
+            architecture = state["project"].get("architecture", "")
+            task_summary = f"Wrote/changed these backend files: {', '.join(written)}"
+            for i in mark_tasks_complete_skill(tasks, architecture, "backend", task_summary):
+                task_status_update[i] = True
+
+            # Backend's own call into the SHARED Acceptance Test Generator
+            # (skills/acceptance_test_generator.py, Database's the first
+            # caller - see database.py's run()) - only regenerated when
+            # backend/ actually changed this round, same "no point re-asking
+            # on a no-op round" reasoning. test_backend.py becomes another
+            # real BE_RUN artifact; BE_VAL's Startup Validator executes it
+            # for real, over real HTTP, against the really-booted container
+            # (see skills/be_startup_validator.py).
+            acceptance_criteria = state["project"].get("acceptance_criteria", [])
+            if acceptance_criteria:
+                test_guidance = """This tests a real, running FastAPI backend over real HTTP - NOT an
+in-process TestClient. Tests MUST make real HTTP requests using the `requests` library against
+os.environ["BASE_URL"] (e.g. requests.post(f"{BASE_URL}/auth/token", ...)) - never import the FastAPI
+app directly, it isn't importable from this test process. If the API uses token-based authentication,
+obtain a real token first via the actual login/token endpoint and include it as a Bearer Authorization
+header on subsequent requests - do not assume any user/token already exists; create whatever fixture
+data each test needs itself through the API's own endpoints (e.g. register before logging in). Assert
+on real HTTP status codes and real response body content matching the acceptance criteria below (e.g. a
+rejected visitor really returns a 4xx and really doesn't appear in a later list call) - never a trivial
+assertion with no real check behind it."""
+                stage_context = (f"openapi.yaml:\n{openapi_spec}\n\n"
+                                 f"Backend files written this round: {', '.join(written)}")
+                tests_code = generate_acceptance_tests_skill(
+                    "backend", stage_context, acceptance_criteria, architecture, tasks, test_guidance,
+                )
+                if tests_code:
+                    (project_dir / "test_backend.py").write_text(tests_code, encoding="utf-8")
+                    logger.success(f"Generated test_backend.py ({len(tests_code)} chars)")
+
         logger.node_complete("backend_run")
         return {
             "runtime": {
@@ -235,6 +358,16 @@ Deployment feedback (if any): {state["runtime"].get("deployment_status") or "non
                 "testing_report": "",
                 "stage_attempts": {STAGE: attempts},
                 "stage_progress": {STAGE: True},
+                "task_status": task_status_update,
+                # What backend/ and openapi.yaml looked like BEFORE this
+                # round's write - BE_VAL's Contract/CRUD validator diffs this
+                # against the new state to tell a genuine REGRESSION (an
+                # operation that worked before and is still required, now
+                # silently gone) apart from ordinary in-progress work (a
+                # newly-required operation nobody has built yet), same
+                # reasoning as database.py's previous_schema.
+                "previous_backend_files": existing_backend_files,
+                "previous_openapi_for_backend": openapi_spec,
                 "current_stage": "backend_run",
                 "completed_nodes": ["backend_run"],
                 "consecutive_agent_failures": consecutive_failures,
@@ -255,6 +388,16 @@ Deployment feedback (if any): {state["runtime"].get("deployment_status") or "non
         workspace = sync_workspace_from_disk(project_dir, state["project"].get("workspace", {}))
         test_results = run_tests_skill(workspace)
         failures = [f["error"] for f in test_results["failures"] if f["file"].startswith("backend/")]
+
+        # Structural checks beyond syntax/imports - router registration and
+        # SQLAlchemy-model-vs-schema.sql column consistency (see
+        # skills/be_validators.py for why these two specifically, and why
+        # a Depends()-resolution checker was deliberately NOT added here -
+        # confirmed already redundant with the existing cross-file-import
+        # check above).
+        backend_files = workspace.get("backend", {}).get("files", {})
+        schema = workspace.get("database", {}).get("schema", "")
+        failures += run_be_ut_validators(backend_files, schema)
 
         attempts = state["runtime"].get("stage_attempts", {}).get(STAGE, 0)
         passed = not failures
@@ -291,8 +434,21 @@ Deployment feedback (if any): {state["runtime"].get("deployment_status") or "non
         project_dir = project_dir_for(state["project"]["project_id"])
         workspace = sync_workspace_from_disk(project_dir, state["project"].get("workspace", {}))
         openapi_spec = workspace.get("contract", {}).get("openapi_spec", "")
-        all_failures = check_backend_matches_contract(openapi_spec, workspace.get("backend", {}).get("files", {})) \
-            if openapi_spec else []
+        previous_backend_files = state["runtime"].get("previous_backend_files", {})
+        previous_openapi_for_backend = state["runtime"].get("previous_openapi_for_backend", "")
+
+        # The shared Acceptance Test Generator's output (see backend.py's
+        # run()), if BE_RUN wrote one this round - executed for real by the
+        # Startup Validator's Requirement Test Runner against the really-
+        # booted container (see skills/be_startup_validator.py).
+        test_path = project_dir / "test_backend.py"
+        test_file_content = test_path.read_text(encoding="utf-8") if test_path.exists() else ""
+
+        all_failures = run_be_val_validators(
+            workspace.get("backend", {}).get("files", {}), openapi_spec,
+            previous_backend_files, previous_openapi_for_backend,
+            test_file_content=test_file_content,
+        ) if openapi_spec else []
 
         # A contract-match gap that keeps recurring across MAX_REVIEW_REPEATS
         # OUTER rounds is often NOT a backend defect at all - it can be the

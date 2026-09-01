@@ -6,15 +6,47 @@ run_pipeline(update=True), and the output/ project registry - so this is a
 second interface onto the same pipeline, not a separate implementation.
 """
 
-import contextlib
+import json
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 
-import main
 from skills.project_registry import list_projects, load_project_snapshot, OUTPUT_BASE
 
 st.set_page_config(page_title="Fullstack AI Pipeline", page_icon="🛠️", layout="wide")
+
+# Every run's log is tee'd to disk (not just held in a browser session's
+# memory) and to the process's real stdout - so a build/update's output
+# both shows up in the terminal that launched `streamlit run` AND survives
+# a browser refresh, which otherwise orphans the in-memory placeholder the
+# old approach relied on entirely.
+LOGS_DIR = Path(__file__).parent / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+ACTIVE_RUN_MARKER = LOGS_DIR / "_active_run.json"
+STALE_RUN_SECONDS = 6 * 60 * 60  # a marker older than this survived a crash, not just a refresh
+MAIN_PY = Path(__file__).parent / "main.py"
+
+LIVE_VIEW_CHAR_CAP = 20000
+LIVE_VIEW_HEIGHT = 400
+
+
+@st.cache_resource
+def _process_registry():
+    """
+    A dict surviving across Streamlit reruns AND across every browser
+    session on this server - a plain module-level dict would NOT work here,
+    since Streamlit re-executes this whole script top-to-bottom on every
+    interaction; st.cache_resource is the documented pattern for exactly
+    this (a singleton shared for the server's lifetime), unlike
+    st.session_state which is per-browser-session only. Keyed by PID ->
+    {"proc": Popen, "reader_thread": Thread}.
+    """
+    return {}
 
 LANG_BY_EXT = {
     ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx", ".jsx": "jsx",
@@ -76,68 +108,106 @@ def combine_request(typed_text: str, uploaded_file) -> str:
     return "\n\n".join(parts)
 
 
-class _LiveLogCapture:
+def _write_active_run_marker(kind: str, log_path: Path, project_id: str, request: str, pid: int,
+                              existing_ids_before: list):
+    ACTIVE_RUN_MARKER.write_text(json.dumps({
+        "kind": kind,
+        "project_id": project_id,
+        "request": request[:200],
+        "log_file": str(log_path),
+        "started_at": time.time(),
+        "pid": pid,
+        "existing_ids_before": existing_ids_before,
+    }))
+
+
+def _clear_active_run_marker():
+    if ACTIVE_RUN_MARKER.exists():
+        ACTIVE_RUN_MARKER.unlink()
+
+
+def _reader_thread(proc: subprocess.Popen, log_path: Path):
     """
-    Redirect stdout into a Streamlit placeholder, updated as the pipeline
-    prints - this is what makes the terminal's exact output (every node
-    start/complete, tool call, model attempt/fallback, stage transition)
-    show up live in the browser, since core/logger.py's PipelineLogger
-    writes everything through plain print() (looked up fresh from sys.stdout
-    on every call, so redirect_stdout catches all of it - nothing here uses
-    the `logging` module or a cached stream reference that would bypass it).
-
-    The LIVE view during the run is capped for rendering performance (a long
-    pipeline run's console output can run to hundreds of KB and re-rendering
-    the whole thing on every single print() call would make the page
-    sluggish) - but full_log() below returns the COMPLETE, uncapped text,
-    which the caller is responsible for persisting (st.session_state) and
-    rendering permanently after the run - the cap only ever applies to the
-    transient live view, never to what's kept.
+    Runs for the lifetime of the pipeline subprocess, independent of any
+    Streamlit script rerun - tees every line the subprocess prints to disk
+    (so the UI can poll it) and to this process's own real stdout (so it
+    still shows up in whatever terminal `streamlit run` was launched from,
+    same as a direct CLI run would).
     """
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        for line in proc.stdout:
+            sys.__stdout__.write(line)
+            sys.__stdout__.flush()
+            log_file.write(line)
+            log_file.flush()
+    proc.wait()
 
-    LIVE_VIEW_CHAR_CAP = 20000
-    LIVE_VIEW_HEIGHT = 400
 
-    def __init__(self, placeholder):
-        self.placeholder = placeholder
-        self.lines = []
+def launch_pipeline_subprocess(cli_args: list, kind: str, project_id: str, request: str):
+    """
+    Runs the pipeline as a REAL separate OS process (`python main.py ...`,
+    the exact same entry point the CLI uses) instead of an in-process
+    function call. This is what makes a genuine Stop button possible:
+    Streamlit's own built-in "Stop" only interrupts the script's control
+    flow between statements and cannot break out of a single long blocking
+    call (an LLM request, `docker compose up`, etc.) sitting inside it -
+    confirmed by direct observation earlier this session, where clicking it
+    left the pipeline running regardless. A real subprocess can be killed
+    outright by PID (see stop_pipeline_subprocess), the same as Ctrl+C would
+    in a terminal - actually stronger, since it force-kills the whole
+    process tree rather than relying on the child cooperating with SIGINT.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = LOGS_DIR / f"{timestamp}_{kind}.log"
+    proc = subprocess.Popen(
+        [sys.executable, "-u", str(MAIN_PY), *cli_args],
+        cwd=str(MAIN_PY.parent),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", bufsize=1,
+    )
+    existing_ids_before = [p["project_id"] for p in list_projects()]
+    _process_registry()[proc.pid] = {"proc": proc}
+    threading.Thread(target=_reader_thread, args=(proc, log_path), daemon=True).start()
+    _write_active_run_marker(kind, log_path, project_id, request, proc.pid, existing_ids_before)
 
-    def write(self, text):
-        if text:
-            self.lines.append(text)
-            self.placeholder.code(
-                "".join(self.lines)[-self.LIVE_VIEW_CHAR_CAP:],
-                language="text",
-                height=self.LIVE_VIEW_HEIGHT,
-            )
 
-    def flush(self):
+def _pid_alive_and_exit_code(pid: int):
+    """Returns (is_alive, exit_code_or_None). Prefers the in-memory Popen handle
+    (this server process launched it); falls back to `tasklist` by PID alone so a
+    Streamlit rerun that lost the in-memory entry (but not the subprocess itself)
+    still detects it correctly."""
+    entry = _process_registry().get(pid)
+    if entry is not None:
+        code = entry["proc"].poll()
+        return (code is None), code
+    try:
+        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True, timeout=5)
+        return (str(pid) in out.stdout), None
+    except Exception:
+        return False, None
+
+
+def stop_pipeline_subprocess(pid: int):
+    """
+    Force-kills the pipeline process AND its whole tree (any docker/npm/pip
+    subprocess main.py itself spawned) - `taskkill /T` is what actually
+    guarantees this on Windows; a plain Ctrl+C/SIGINT can be swallowed by a
+    nested blocking call and leave orphaned children running, which is
+    exactly what was observed needing manual process-tree cleanup earlier
+    this session.
+    """
+    try:
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15)
+    except Exception:
         pass
-
-    def full_log(self) -> str:
-        return "".join(self.lines)
-
-
-def run_with_live_log(fn, *args, **kwargs):
-    """Run a blocking pipeline call while streaming its console output into the UI."""
-    placeholder = st.empty()
-    capture = _LiveLogCapture(placeholder)
-    result = None
-    with contextlib.redirect_stdout(capture):
-        try:
-            result = fn(*args, **kwargs)
-        except SystemExit:
-            result = None
-        except Exception as e:
-            print(f"\n❌ Unexpected error: {e}")
-    return result, capture.full_log()
+    _process_registry().pop(pid, None)
 
 
 def render_full_log(log: str, key: str):
     """
     Permanent, terminal-equivalent log view - shown every rerun, not just
     while the pipeline is actively running. This is the exact same text the
-    CLI prints to the real terminal (see _LiveLogCapture's docstring), kept
+    CLI prints to the real terminal (see _reader_thread), kept
     in full (no truncation) so it stays available after the run completes,
     after a page rerun, or even after switching tabs and coming back -
     closing the gap where the live view during the run would otherwise be
@@ -153,51 +223,44 @@ def render_full_log(log: str, key: str):
         )
 
 
-def render_pipeline_result(result):
-    """Render a full ProjectState (build or update run)."""
-    if not result:
-        st.error("The run did not complete - see the log above. If files were generated, "
-                 "they were still salvaged to output/ and are available under Update/Explore.")
+def render_finished_run_summary(marker: dict):
+    """
+    Shown once a launched subprocess has exited. There's no in-memory
+    ProjectState to read anymore (the pipeline ran in a separate OS process,
+    which is what makes Stop actually work - see launch_pipeline_subprocess)
+    - so this reloads whatever the pipeline itself already persisted to
+    disk via the project registry, same source Explore Files reads from.
+    """
+    project_id = marker.get("project_id") or ""
+    if not project_id and marker["kind"] == "new":
+        # A new build's project_id isn't known until the pipeline derives
+        # it from the request text - detect it by diffing the project list
+        # against the snapshot taken right before the subprocess launched.
+        before = set(marker.get("existing_ids_before", []))
+        after = [p["project_id"] for p in list_projects()]
+        new_ids = [pid for pid in after if pid not in before]
+        if len(new_ids) == 1:
+            project_id = new_ids[0]
+        elif new_ids:
+            st.info(f"Multiple new projects appeared: {', '.join(new_ids)} - open Explore Files to inspect any of them.")
+
+    if not project_id:
+        st.warning("Run finished, but no project snapshot was found for it - see the log below, "
+                   "and check Explore Files/the sidebar for anything that was generated.")
         return
 
-    runtime = result.get("runtime", {})
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Quality", "PASSED" if runtime.get("quality_passed") else "FAILED")
-    col2.metric("Completed Nodes", len(runtime.get("completed_nodes", [])))
-    col3.metric("Retries", runtime.get("retry_count", 0))
-
-    if runtime.get("final_project_path"):
-        st.success(f"Project available at: `{runtime['final_project_path']}`")
-    else:
-        st.warning("Pipeline did not reach release_eng - check the log above.")
-
-    st.write("**Execution Plan:**", runtime.get("execution_plan", {}))
-
-    issues = runtime.get("review_issues", [])
-    if issues:
-        with st.expander(f"⚠️ {len(issues)} outstanding issue(s)"):
-            for issue in issues:
-                st.markdown(f"- **[{issue['severity']}]** `{issue['file']}` — {issue['description']}")
-
-    logs = runtime.get("logs", [])
-    if logs:
-        with st.expander("Execution logs (most recent)"):
-            for log in logs[-15:]:
-                st.text(log)
-
-
-def render_simple_file_result(result):
-    if not result:
-        st.error("Could not generate the requested file(s) - see the log above.")
+    snapshot = load_project_snapshot(project_id)
+    if not snapshot:
+        st.warning(f"Run finished, but `{project_id}` has no saved snapshot yet - see the log below.")
         return
 
-    st.success(f"Generated {len(result['files'])} file(s)")
-    st.write(f"**Project ID:** `{result['project_id']}`")
-    st.write(f"**Path:** `{result['project_path']}`")
-    for fname, content in result["files"].items():
-        with st.expander(f"📄 {fname}"):
-            st.code(content, language=lang_for(fname))
+    metadata = snapshot["metadata"]
+    st.success(f"Project: `{project_id}`")
+    col1, col2 = st.columns(2)
+    col1.write(f"**Request:** {metadata.get('user_request', '')[:200]}")
+    col2.write(f"**Last updated:** {metadata.get('updated_at', 'n/a')}")
+    st.write("**Execution Plan:**", metadata.get("execution_plan", {}))
+    st.write("**Stage Status:**", metadata.get("stage_status", {}))
 
 
 def project_workspace_files(workspace: dict) -> dict:
@@ -219,11 +282,90 @@ def refresh_projects():
     st.session_state["projects"] = list_projects()
 
 
+def render_active_run_banner():
+    """
+    Single place that owns the whole lifecycle of a launched pipeline run:
+    shows the live log (reloaded from disk, so a browser refresh never
+    loses it - even for a session that never saw the run start), a real
+    Stop button, and - once the subprocess actually exits - the finished
+    summary. Polls via sleep+rerun since Streamlit has no push mechanism
+    for background work.
+    """
+    if not ACTIVE_RUN_MARKER.exists():
+        return
+    try:
+        marker = json.loads(ACTIVE_RUN_MARKER.read_text())
+    except Exception:
+        return
+
+    age_s = time.time() - marker.get("started_at", 0)
+    if age_s > STALE_RUN_SECONDS:
+        st.warning("A pipeline run marker from over 6 hours ago is still here - it likely crashed "
+                   "without cleaning up rather than still running.")
+        if st.button("🗑️ Clear stale run marker"):
+            _clear_active_run_marker()
+            st.rerun()
+        return
+
+    log_path = Path(marker["log_file"])
+    pid = marker.get("pid")
+    if pid is None:
+        # A marker from before the subprocess rewrite (no "pid" field) -
+        # can't be tracked or stopped, and its process is long gone by now.
+        _clear_active_run_marker()
+        return
+    is_alive, exit_code = _pid_alive_and_exit_code(pid)
+
+    if not is_alive:
+        label = f"{marker['kind']} run" + (f" for `{marker['project_id']}`" if marker.get("project_id") else "")
+        if exit_code in (0, None):
+            st.success(f"✅ {label} finished.")
+        else:
+            st.error(f"❌ {label} exited with code {exit_code} - see the log below.")
+        render_finished_run_summary(marker)
+        if log_path.exists():
+            render_full_log(log_path.read_text(encoding="utf-8", errors="replace"), key="finished_run")
+        refresh_projects()
+        _clear_active_run_marker()
+        st.divider()
+        return
+
+    started = datetime.fromtimestamp(marker["started_at"]).strftime("%H:%M:%S")
+    label = f"project `{marker['project_id']}`" if marker.get("project_id") else "a new project"
+    st.info(f"⏳ A {marker['kind']} run for {label} is still in progress (started {started}) - "
+            f"live log below, reloaded from disk so it isn't lost on refresh.")
+
+    if log_path.exists():
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+        st.code(text[-LIVE_VIEW_CHAR_CAP:], language="text", height=LIVE_VIEW_HEIGHT)
+
+    col1, col2, col3 = st.columns([1, 1, 3])
+    with col1:
+        if st.button("🛑 Stop pipeline", type="primary"):
+            stop_pipeline_subprocess(marker["pid"])
+            st.warning("Stop requested - force-killing the pipeline process (and any docker/npm/pip "
+                      "subprocess it spawned).")
+            _clear_active_run_marker()
+            st.rerun()
+    with col2:
+        if st.button("🔄 Refresh now"):
+            st.rerun()
+    with col3:
+        auto_refresh = st.checkbox("Auto-refresh every 3s", value=True, key="active_run_autorefresh")
+    st.divider()
+
+    if auto_refresh:
+        time.sleep(3)
+        st.rerun()
+
+
 if "projects" not in st.session_state:
     refresh_projects()
 
 st.title("🛠️ Fullstack AI Pipeline")
 st.caption(f"LangGraph multi-capability pipeline — projects are read from `{OUTPUT_BASE.resolve()}`")
+
+render_active_run_banner()
 
 with st.sidebar:
     st.header("📁 Projects")
@@ -267,33 +409,19 @@ with tab_new:
     # check computed from the stale pre-edit value meant clicking Build right
     # after typing (without clicking elsewhere first) silently did nothing.
     # Validating inside the handler instead makes every click actually react.
-    if st.button("🚀 Build", type="primary"):
+    if st.button("🚀 Build", type="primary", disabled=ACTIVE_RUN_MARKER.exists()):
         combined_request = combine_request(new_request, new_request_file)
         if not combined_request:
             st.warning("Enter a request or attach a requirements file first.")
         else:
-            with st.status("Running pipeline...", expanded=True) as status:
-                result, log = run_with_live_log(main.dispatch_new_request, combined_request)
-                status.update(label="Done", state="complete")
-            refresh_projects()
-            # Stash the result AND the full log, and force a full rerun so the
-            # sidebar (rendered earlier in script order) picks up the new
-            # project on this same interaction, instead of only on the next
-            # unrelated one. The log must be stashed too - without this, the
-            # live view above only exists for the duration of the run itself;
-            # the moment this rerun happens, that placeholder is gone and
-            # there'd be nothing left showing the terminal-equivalent output.
-            st.session_state["new_build_result"] = result
-            st.session_state["new_build_log"] = log
+            # Launches `python main.py "<request>"` as a real subprocess and
+            # returns immediately - render_active_run_banner (called at the
+            # top of every rerun) takes over showing progress and the Stop
+            # button from here, instead of blocking this whole script run.
+            launch_pipeline_subprocess([combined_request], kind="new", project_id="", request=combined_request)
             st.rerun()
-
-    if "new_build_result" in st.session_state:
-        result = st.session_state["new_build_result"]
-        if result is not None and "runtime" not in result:
-            render_simple_file_result(result)  # run_simple_file_task's return shape
-        else:
-            render_pipeline_result(result)
-        render_full_log(st.session_state.get("new_build_log", ""), key="new_build")
+    if ACTIVE_RUN_MARKER.exists():
+        st.caption("A pipeline run is already in progress - see below. Only one run at a time is supported.")
 
 with tab_update:
     st.subheader("Update an existing project")
@@ -318,25 +446,19 @@ with tab_update:
                  "If you also type something above, both are sent together.",
         )
 
-        if st.button("🔧 Apply Update", type="primary"):
+        if st.button("🔧 Apply Update", type="primary", disabled=ACTIVE_RUN_MARKER.exists()):
             combined_change_request = combine_request(change_request, change_request_file)
             if not combined_change_request:
                 st.warning("Describe the change or attach a file first.")
             else:
                 project_id = options[choice]
-                with st.status(f"Updating {project_id}...", expanded=True) as status:
-                    result, log = run_with_live_log(
-                        main.run_pipeline, combined_change_request, project_id=project_id, update=True
-                    )
-                    status.update(label="Done", state="complete")
-                refresh_projects()
-                st.session_state["update_result"] = result
-                st.session_state["update_log"] = log
+                launch_pipeline_subprocess(
+                    ["--update", project_id, combined_change_request],
+                    kind="update", project_id=project_id, request=combined_change_request,
+                )
                 st.rerun()
-
-    if "update_result" in st.session_state:
-        render_pipeline_result(st.session_state["update_result"])
-        render_full_log(st.session_state.get("update_log", ""), key="update")
+        if ACTIVE_RUN_MARKER.exists():
+            st.caption("A pipeline run is already in progress - see below. Only one run at a time is supported.")
 
 with tab_explore:
     st.subheader("Explore a project's generated files")
